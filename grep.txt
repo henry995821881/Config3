@@ -1,6 +1,7 @@
 
 grep -r 'hello word' /home
 
+grep -r 'hellor'  /home | grep '.xml'
 
 
 ¼ò½é
