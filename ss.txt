@@ -1,0 +1,157 @@
+ *****类似netstat   centos6.5
+  ****    ss主要是centos7用的
+
+
+
+
+ ss命令用来显示处于活动状态的套接字信息。
+
+
+    (1)用法:
+
+    用法:  ss  [参数]
+
+　　　　  ss  [参数]  [过滤]
+
+ 
+
+    (2)功能:
+
+    功能:  ss是类似netstat的工具。能显示查看网络状态信息，包括TCP、UDP连接，端口。
+
+　  ss命令可以用来获取socket统计信息，它可以显示和netstat类似的内容。但ss的优势在于它能够显示更多更详细的有关TCP和连接状态的信息，而且比netstat更快速更高效。
+     注意:  当服务器的socket连接数量变得非常大时，无论是使用netstat命令还是直接cat /proc/net/tcp，执行速度都会很慢。可能你不会有切身的感受，但请相信我，当服务器维持的连接达到上万个的时候，使用netstat等于浪费生命，而用ss才是节省时间。ss快的秘诀在于，它利用到了TCP协议栈中tcp_diag。tcp_diag是一个用于分析统计的模块，可以获得Linux 内核中第一手的信息，这就确保了ss的快捷高效。当然，如果你的系统中没有tcp_diag，ss也可以正常运行，只是效率会变得稍慢。
+
+ 
+
+    (3)选项参数
+
+      1) -t, --tcp 　　　　　　　　仅显示TCP套接字（sockets）
+
+      2) -a, --all 　　　　　　　　显示所有套接字（sockets）
+
+      3) -s, --summary 　　　　  显示套接字（socket）使用概况 
+
+      4) -l 　　　　　　　　　　　 显示LISTEN状态的连接(连接打开)
+
+      5) -p, --processes 　　       显示使用套接字（socket）的进程
+
+      6) -u, --udp 　　　　　　    仅显示 UCP套接字（sockets）
+
+      7) -d, --dccp 　　　　　　   仅显示 DCCP套接字（sockets）
+
+      8) -w, --raw 　　　　　　　 仅显示 RAW套接字（sockets）
+
+      9) -x, --unix 　　　　　　　 仅显示 Unix套接字（sockets）
+
+ 
+
+    (4)实例:
+
+      1)[root@localhost sunjimeng]# ss -t -a　　　　　　显示TCP连接
+
+复制代码
+[root@localhost sunjimeng]# ss -t -a
+State      Recv-Q Send-Q      Local Address:Port          Peer Address:Port   
+LISTEN     0      128                     *:ssh                      *:*       
+LISTEN     0      128             127.0.0.1:ipp                      *:*       
+LISTEN     0      100             127.0.0.1:smtp                     *:*       
+TIME-WAIT  0      0         192.168.142.128:52859       115.28.122.210:http    
+TIME-WAIT  0      0         192.168.142.128:53367      112.124.140.210:http    
+LISTEN     0      128                    :::ssh                     :::*       
+LISTEN     0      128                   ::1:ipp                     :::*       
+LISTEN     0      100                   ::1:smtp                    :::*       
+[root@localhost sunjimeng]# netstat -ta
+Active Internet connections (servers and established)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+tcp        0      0 0.0.0.0:ssh             0.0.0.0:*               LISTEN     
+tcp        0      0 localhost:ipp           0.0.0.0:*               LISTEN     
+tcp        0      0 localhost:smtp          0.0.0.0:*               LISTEN     
+tcp        0      0 192.168.142.128:52926   ec2-52-36-148-12.:https ESTABLISHED
+tcp        0      0 192.168.142.128:54577   ec2-52-26-186-108:https ESTABLISHED
+tcp        0      0 192.168.142.128:54576   ec2-52-26-186-108:https ESTABLISHED
+tcp6       0      0 [::]:ssh                [::]:*                  LISTEN     
+tcp6       0      0 localhost:ipp           [::]:*                  LISTEN     
+tcp6       0      0 localhost:smtp          [::]:*                  LISTEN 
+复制代码
+      2)[root@localhost sunjimeng]# ss -s　　　　　　显示套接字使用概况(列出当前的established, closed, orphaned and waiting TCP sockets)
+
+复制代码
+[root@localhost sunjimeng]# ss -s
+Total: 1133 (kernel 1377)
+TCP:   7 (estab 0, closed 1, orphaned 0, synrecv 0, timewait 0/0), ports 0
+
+Transport Total     IP        IPv6
+*      1377      -         -        
+RAW      1         0         1        
+UDP      9         6         3        
+TCP      6         3         3        
+INET      16        9         7        
+FRAG      0         0         0     
+复制代码
+      3)[root@localhost sunjimeng]# ss -l　　　　　　　　列出所有打开的网络连接端口，即已经连接的网络端口
+
+复制代码
+[root@localhost sunjimeng]# ss -l
+Netid  State      Recv-Q Send-Q           Local Address:Port               Peer Address:Port   
+nl     UNCONN     0      0                         rtnl:NetworkManager/929                        *       
+nl     UNCONN     0      0                         rtnl:gnome-shell/3126                        *       
+......
+u_dgr  UNCONN     0      0                            * 246524                        * 1492   
+u_dgr  UNCONN     0      0                            * 158303                        * 1492   
+raw    UNCONN     0      0                           :::ipv6-icmp                      :::*       
+tcp    UNCONN     0      0                            *:ipproto-68                       *:*       
+tcp    UNCONN     0      0                            *:ptp                           *:*       
+tcp    UNCONN     0      0                    127.0.0.1:ipproto-323                       *:*       
+tcp    UNCONN     0      0                            *:ipproto-5353                       *:*       
+tcp    UNCONN     0      0                            *:ipproto-52525                       *:*       
+tcp    UNCONN     0      0                            *:ipproto-16290                       *:*       
+tcp    UNCONN     0      0                           :::ptp                          :::*       
+tcp    UNCONN     0      0                          ::1:ipproto-323                      :::*       
+tcp    UNCONN     0      0                           :::ipproto-44068                      :::*       
+tcp    LISTEN     0      128                          *:ssh                           *:*       
+tcp    LISTEN     0      128                  127.0.0.1:ipp                           *:*       
+tcp    LISTEN     0      100                  127.0.0.1:smtp                          *:*       
+tcp    LISTEN     0      128                         :::ssh                          :::*       
+tcp    LISTEN     0      128                        ::1:ipp                          :::*       
+tcp    LISTEN     0      100                        ::1:smtp                         :::*   
+复制代码
+      4)[root@localhost sunjimeng]# ss -t -a -p　　　　　　显示使用套接字的进程的信息
+
+复制代码
+[root@localhost sunjimeng]# ss -t -a
+State      Recv-Q Send-Q              Local Address:Port                  Peer Address:Port   
+LISTEN     0      128                             *:ssh                              *:*       
+LISTEN     0      128                     127.0.0.1:ipp                              *:*       
+LISTEN     0      100                     127.0.0.1:smtp                             *:*       
+LISTEN     0      128                            :::ssh                             :::*       
+LISTEN     0      128                           ::1:ipp                             :::*       
+LISTEN     0      100                           ::1:smtp                            :::*       
+[root@localhost sunjimeng]# ss -t -a -p
+State      Recv-Q Send-Q              Local Address:Port                  Peer Address:Port   
+LISTEN     0      128                             *:ssh                              *:*        users:(("sshd",1324,3))
+LISTEN     0      128                     127.0.0.1:ipp                              *:*        users:(("cupsd",3130,12))
+LISTEN     0      100                     127.0.0.1:smtp                             *:*        users:(("master",2575,13))
+LISTEN     0      128                            :::ssh                             :::*        users:(("sshd",1324,4))
+LISTEN     0      128                           ::1:ipp                             :::*        users:(("cupsd",3130,11))
+LISTEN     0      100                           ::1:smtp                            :::*        users:(("master",2575,14))
+复制代码
+      5)[root@localhost sunjimeng]# ss -pl |grep 1487　　　显示端口号为1487的已连接的套接字的进程信息
+
+[root@localhost sunjimeng]# ss -pl |grep 1487
+u_str  LISTEN     0      128    /run/systemd/journal/stdout 1487                  * 0       users:(("systemd-journal",617,3),("systemd",1,25))
+[root@localhost sunjimeng]# 
+      6)两个命令的时间对比：
+
+复制代码
+[root@localhost sunjimeng]# time ss
+
+real    0m0.081s
+user    0m0.000s
+sys    0m0.004s
+[root@localhost sunjimeng]# time netstat
+
+real    0m0.018s
+user    0m0.004s
+sys    0m0.000s
+[root@localhost sunjimeng]# 
