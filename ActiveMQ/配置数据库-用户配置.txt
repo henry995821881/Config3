@@ -1,0 +1,87 @@
+ActiveMQ的主要配置文件
+
+ActiveMQ的一些常用的属性很多可以在对应的配置文件中进行配置的。比如访问web console的管理端的端口,用户名密码,连接MQ时的用户名和密码,持久化设置,是否启用消息优先级的设置等。
+
+1. 配置ActiveMQ的web Console控制台端口:
+
+在jetty.xml文件中:
+
+<bean id="jettyPort" class="org.apache.activemq.web.WebConsolePort" init-method="start">
+             <!-- the default port number for the web console -->
+        <property name="host" value="0.0.0.0"/>
+        <property name="port" value="8161"/>
+</bean>
+2. ActiveMQ的web Console控制台用户名密码配置:
+
+当登录http://localhost:8161进入管理界面时,输入用户名密码配置在文件etty-realm.properties中,添加一个用户为"aries"密码为"123"的管理员如下:
+
+# Defines users that can access the web (console, demo, etc.)
+# username: password [,rolename ...]
+admin: admin, admin
+user: user, user
+aries: 123, admin
+第一列为用户名,第二列是密码,第三列表示角色。
+
+3. ActiveMQ的安全性设置:
+
+比如下程序连接获取MQ连接的时候需要设置用户名密码,如果设置为默认的任何人都可以进行生产和消费对应Destination的消息,这样就存在安全性问题。
+
+//创建connectionFactory
+ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(//
+      "aries",//ActiveMQConnectionFactory.DEFAULT_USER,
+      "aries",//ActiveMQConnectionFactory.DEFAULT_PASSWORD,
+      "tcp://localhost:61616");
+程序最开始的用户名和密码为默认的,新设置的用户名和密码都为"aries",在ActiveMQ.xml文件中,添加一个插件配置代码如下:
+
+复制代码
+<plugins>
+　　　<simpleAuthenticationPlugin>
+　　　　　　　<users>
+　　　　　　　　　　<authenticationUser username="aries" password="aries" groups="users,admins"/>
+　　　　　　　</users>
+　　　</simpleAuthenticationPlugin>
+</plugins>
+复制代码
+4. 设置MQ的持久化方式:
+
+ActiveMQ默认使用KaHadb进行持久化消息存储, 配置在ActiveMQ.xml文件中:
+
+<persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"/>
+</persistenceAdapter>
+a. 现在我们将持久化存储方式修改为mysql,则修改上面的配置文件如下:
+
+<persistenceAdapter>
+
+         <jdbcPersistenceAdapter  dataSource="#derby-ds"/>
+
+</persistenceAdapter>
+b. 同时添加mysq数据源的配置:
+
+复制代码
+<bean id="derby-ds" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+　　<property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+　　<property name="url" value="jdbc:mysql://localhost:3306/activemq?relaxAutoCommit=true"/>
+　　<property name="username" value="root"/>
+　　<property name="password" value="123"/>
+　　<property name="maxActive" value="200"/>
+　　<property name="poolPreparedStatements" value="true"/>
+</bean>
+
+复制代码
+c. 添加mysql驱动等依赖包到ActiveMQ的lib目录下:
+
+　　mysql-connector-Java-5.1.30-bin.jar
+
+　　commons-dbcp-1.4.jar
+
+　　commons-pool-1.6.jar
+
+d. 在mysql中创建 activemq 数据库,然后启动ActiveMQ，如果数据test库中生成 activemq_acks，activemq_lock，activemq_msgs三张表,则证明mysql持久化存储配置完成。
+
+5.配置消息接收发送顺序按照优先级进行:
+
+在发送消息的时候我们可以设置消息的优先级,来确定消息的接收顺序(对于单个MQ来说,如果是集群就不能确定优先级顺序了),优先级的使用需要在ActiveMQ.xml配置文件中进行开启:
+
+ <policyEntry queue=">"  prioritizedMessages="true" />  
+后续配置再做补充。

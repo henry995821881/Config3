@@ -1,0 +1,168 @@
+productor:
+ <amq:connectionFactory id="amqConnectionFactory"
+                           brokerURL="tcp://192.168.20.148:61616"
+                           userName="admin"
+                           password="admin" />
+
+    <!-- 配置JMS连接工长 -->
+    <bean id="connectionFactory"
+          class="org.springframework.jms.connection.CachingConnectionFactory">
+        <constructor-arg ref="amqConnectionFactory" />
+        <property name="sessionCacheSize" value="100" />
+    </bean>
+
+    <!-- 定义消息队列（Queue） -->
+    <bean id="demoQueueDestination" class="org.apache.activemq.command.ActiveMQQueue">
+        <!-- 设置消息队列的名字 -->
+        <constructor-arg>
+            <value>queue.erp.test</value>
+        </constructor-arg>
+    </bean>
+
+    <!-- 配置JMS模板（Queue），Spring提供的JMS工具类，它发送、接收消息。 -->
+    <bean id="jmsTemplate" class="org.springframework.jms.core.JmsTemplate">
+        <property name="connectionFactory" ref="connectionFactory" />
+        <property name="defaultDestination" ref="demoQueueDestination" />
+        <property name="receiveTimeout" value="10000" />
+        <!-- true是topic，false是queue，默认是false，此处显示写出false -->
+        <property name="pubSubDomain" value="false" />
+        <!-- 进行持久化 -->
+    	<property name="deliveryMode" value="2" />
+    </bean>
+
+pom.xml:
+
+	<!-- activemq -->
+		<dependency>
+	      <groupId>org.springframework</groupId>
+	      <artifactId>spring-jms</artifactId>
+	      <version>${spring.version}</version>
+	    </dependency>
+		<dependency>
+	      <groupId>org.apache.xbean</groupId>
+	      <artifactId>xbean-spring</artifactId>
+	      <version>3.16</version>
+	    </dependency>
+	    <dependency>
+	      <groupId>org.apache.activemq</groupId>
+	      <artifactId>activemq-core</artifactId>
+	      <version>5.7.0</version>
+	    </dependency>
+	    <dependency>
+	      <groupId>org.apache.activemq</groupId>
+	      <artifactId>activemq-pool</artifactId>
+	      <version>5.12.1</version>
+	    </dependency>
+
+
+操作 jmsTemplate 发送消息：
+
+  /**
+     * 发送对象JMS消息
+     * @param destination
+     * @param msg
+     */
+    public void sendObjectMessage(String destination,final ComJMSMessage msg){
+    	logger.debug(Thread.currentThread().getName()+" 向队列"+destination+"发送消息---->"+msg);
+    	jmsTemplate.send(destination, new MessageCreator() {
+            public Message createMessage(Session session) throws JMSException {
+                return session.createObjectMessage(msg);
+            }
+        });
+        logger.info(Thread.currentThread().getName()+" 向队列"+destination+"发送消息成功---->");
+        
+
+    }
+
+    /**
+     * 发送字符串JMS消息
+     * @param destination
+     * @param msg
+     */
+    public void sendMessage(String destination,final String msg){
+    	logger.debug(Thread.currentThread().getName()+" 向队列"+destination+"发送消息---->"+msg);
+    	jmsTemplate.send(destination, new MessageCreator() {
+            public Message createMessage(Session session) throws JMSException {
+                return session.createTextMessage(msg);
+            }
+        });
+        logger.info(Thread.currentThread().getName()+" 向队列"+destination+"发送消息成功---->");
+    }
+----------------------------------------------------------------------------------
+
+
+custormer:
+
+   <amq:connectionFactory id="amqConnectionFactory"
+                           brokerURL="tcp://${amq.url}"
+                           userName="${amq.user}"
+                           password="${amq.password}" />
+
+    <!-- 配置JMS连接工长 -->
+    <bean id="connectionFactory"
+          class="org.springframework.jms.connection.CachingConnectionFactory">
+        <constructor-arg ref="amqConnectionFactory" />
+        <property name="sessionCacheSize" value="100" />
+    </bean>
+
+    <!-- 定义消息队列（Queue） -->
+    <bean id="erpBaseQueueDestination" class="org.apache.activemq.command.ActiveMQQueue">
+        <!-- 设置消息队列的名字 -->
+        <constructor-arg>
+            <value>${queue.erp.base}</value>
+        </constructor-arg>
+    </bean>
+    
+	<!-- 配置ERP基础数据同步消息队列监听者（Queue） -->
+    <bean id="erpBaseMessageListener" class="com.xyscm.ldp.api.amq.ErpBaseMessageListener" >
+    	<property name="basicOrgFacade" ref="basicOrgFacade" />
+    	<property name="basicDeptFacade" ref="basicDeptFacade" />
+    	<property name="basicEmployeeFacade" ref="basicEmployeeFacade" />
+    </bean>
+
+    <!-- 显示注入消息监听容器（Queue），配置连接工厂，监听的目标是erpBaseQueueDestination，监听器是上面定义的监听器 -->
+    <bean id="erpBaseMessageListenerContainer"
+          class="org.springframework.jms.listener.DefaultMessageListenerContainer">
+        <property name="connectionFactory" ref="connectionFactory" />
+        <property name="destination" ref="erpBaseQueueDestination" />
+        <property name="messageListener" ref="erpBaseMessageListener" />
+    </bean>
+
+
+ErpBaseMessageListener 基础监听器 javax.jms.MessageListener
+
+
+ */
+public class ErpBaseMessageListener implements MessageListener {
+	
+	private Logger logger = LoggerFactory.getLogger(ErpBaseMessageListener.class.getName());
+	
+	
+	/**
+	 * 读取MQ队列消息进行处理
+	 * 
+	 * @param message MQ消息
+	 */
+    public void onMessage(Message message) {
+    	
+    	
+
+        //异常调用onError(Message message, Exception e)
+    }
+    
+  
+    /**
+     * 异常处理:
+     * 
+     * 将异常消息移入到死信队列（或数据库中），防止阻塞队列中后续消息的处理
+     * 
+     * @param data
+     * @param errMsg
+     *
+     * void
+     */
+    private void onError(Message message, Exception e){
+    	
+    }
+
+}
