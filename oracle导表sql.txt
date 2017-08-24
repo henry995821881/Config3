@@ -1,0 +1,178 @@
+
+转至元数据结尾
+创建： 谢炼锋，最新修改于： 八月 22, 2017 转至元数据起始
+ 
+一、导入前准备
+1、创建全局dblink (使用对方数据库的用户名密码连接)，需要使用sysdba用户创建（其中用户名、密码、HOST、PORT、SERVICE_NAME需要修改对应的值）
+create public database link erpzs 
+　　connect to czzhd1 identified by czzhd1 
+　　using '(DESCRIPTION =(ADDRESS_LIST =(ADDRESS =(PROTOCOL = TCP)(HOST = 192.168.65.128)(PORT = 1521)))(CONNECT_DATA =(SERVICE_NAME = orcl1)))';
+ 
+2、清理表历史数据（注意：basic、config、system开头的表不清理），清理脚本见
+truncate_tab.sql
+ 
+3、对特殊表的记录部分清除
+--权限表
+delete from SYSTEM_OP_PERMISSION where operator_code !='0000';
+--部门权限表
+delete from system_op_dataper where operator_code !='0000';
+--特权用户表
+delete from system_privpass_user where operator_code !='0000';
+--系统操作员表
+delete from system_operator ;
+--插入默认系统超级管理员
+insert into system_operator (OPERATOR_ID, MEMBER_CODE, OPERATOR_CODE, OPERATOR_USERID, OPERATOR_USER, OPERATOR_PASSWORD, ROLE_CODELIST, OPERATOR_KEY, OPERATOR_STATE, OPERATOR_IDENTITY, ORG_CODE, DEPT_CODE, EMPLOYEE_CODE, OPERATOR_NICKNAME, OPERATOR_PHOTO, OPERATOR_HOMEURL, OPERATOR_FAILNUM, PDAUSER_STATE)
+values (1, '0000', '0000', 'gdsdp', '系统管理员', 'BD3B07FFE81DAA59F1FEE10FD4FE3551', 'role0010', '', 0, 2, '000000', '000024', '000000', '管理员', '', '', 0, 0);
+ 
+--加工工艺
+insert into basic_dd (DD_ID, MEMBER_CODE, DD_NAME, DDTYPE_CLASS, DD_NOTUSE, DD_REMARK, BASIC_SHARE, DD_TYPE_ACCINOUTCLASS, SUBJECT_CODE)
+values (basic_dd_seq.nextval, '0000', '切边', 'mtaskddTypeCraft', 0, '', 0, '', '');
+insert into basic_dd (DD_ID, MEMBER_CODE, DD_NAME, DDTYPE_CLASS, DD_NOTUSE, DD_REMARK, BASIC_SHARE, DD_TYPE_ACCINOUTCLASS, SUBJECT_CODE)
+values (basic_dd_seq.nextval, '0000', '简加工', 'mtaskddTypeCraft', 0, '', 0, '', '');
+
+
+二、执行数据导入SQL
+--导入机构数据
+delete from basic_org;
+insert into basic_org (ORG_ID, MEMBER_CODE, ORG_CODE, ORG_PARENT, ORG_NAME, ORG_ABBREVIATE, ORG_PHONE, ORG_FAX, ORG_CORPORATION, ORG_ACCOUNTS, ORG_BANKNAME, ORG_TANU, ORG_ADDR, ORG_REMARK, ORG_ISLEAF, ORG_NODECODE, BASIC_SHARE, COMPANY_CODE)
+values (1, '0000', '0000', '-1', '集团', '集团', '', '', '', '', '', '', '', '', 0, '0000', null, '');
+insert into basic_org 
+select basic_org_seq.nextval,'0000',t.ORG_CODE,'0000',t.ORG_NAME,t.ORG_ABBREVIATE,'', '', '', '', '', '', '', '', 1,CONCAT('0000.',t.ORG_CODE),null,t.COMPANY_CODE 
+from basic_org@erpzs t;
+ 
+--导入部门数据
+delete from basic_dept ;
+insert into basic_dept (DEPT_ID, MEMBER_CODE, DEPT_CODE, DEPT_NAME, ORG_CODE, DEPT_MANAGER, DEPT_REMARK, DEPT_ISLEAF, DEPT_PARENT, DEPT_NODECODE, BASIC_SHARE)
+values (1, '0000', '0000', '集团部门', '', '', '', 0, '-1', '0000', null);
+insert into basic_dept 
+select basic_dept_seq.nextval,'0000',t.DEPT_CODE,t.DEPT_NAME,'',t.DEPT_MANAGER,t.DEPT_REMARK,1,'0000',CONCAT('0000.',t.DEPT_CODE),null 
+from basic_dept@erpzs t;
+ 
+--导入员工数据
+delete from basic_employee ;
+insert into basic_employee 
+select basic_employee_seq.nextval,'0000',t.EMPLOYEE_CODE,t.EMPLOYEE_NAME,'',t.ORG_CODE,t.DEPT_CODE,t.WORKTYPE_NAME,t.EMPLOYEE_JOB,t.EMPLOYEE_SEX,t.EMPLOYEE_IDCARD,t.EMPLOYEE_NATIVE,t.EMPLOYEE_SPECIALTY,t.EMPLOYEE_PARTY,t.EMPLOYEE_TECHNICAL,t.EMPLOYEE_NATION,
+(case t.EMPLOYEE_MARRIAGE when 1 then '未婚' when 2 then '已婚' else '' end),
+t.EMPLOYEE_DEGREE,t.EMPLOYEE_BIRTHDAY,t.EMPLOYEE_JOINDATE,t.EMPLOYEE_ADDR,t.EMPLOYEE_PHONE,t.EMPLOYEE_MOBILE,t.EMPLOYEE_EMAIL,t.EMPLOYEE_CLASS,t.EMPLOYEE_STATE,t.EMPLOYEE_REMARK,null 
+from basic_employee@erpzs t;
+ 
+ 
+--导入往来单位信息
+delete from basic_company ;
+insert into basic_company 
+select basic_company_seq.nextval,'0000',t.COMPANY_CODE,t.COMPANY_NAME,t.COMPANY_ABBREVIATE,t.COMPANY_PERMITMODE,
+t.COMPANY_PERMITLIST,t.COMPANY_PHONE,t.COMPANY_FAX,t.COMPANY_CORPORATION,t.COMPANY_TANU,t.COMPANY_BANK,t.COMPANY_BANKACCOUNTS,
+t.COMPANY_INVOICEADDR, t.COMPANY_EMAIL, t.COMPANY_ADDR,
+(case t.AREA_CODE when '18' then '0856' when '38' then '1043' else '' end),
+t.COMPANY_LINKMAN, t.COMPANY_POSTCODE, t.COMPANY_REMARK, 
+t.COMPANY_STATE, t.COMPANY_MNEMCODE, t.COMPANY_TYPE, t.COMPANY_CLASS, t.COMPANY_PROPERTY, t.DATA_SYSTEMDATE, t.COMPANY_INDUSTRY, 
+null,null,null,null,null,
+t.COMPANY_SOURCE, t.EMPLOYEE_CODE, t.OPERATOR_CODE, t.ORG_CODE, t.DEPT_CODE, t.DATA_EDIT_ORG, t.DATA_EDIT_DEPT, 
+'货主HZ',null,t.COMPANY_CODE,null,
+t.COMPANY_ORGCODE,
+0,null,'0级','活跃' 
+from basic_company@erpzs t where t.COMPANY_CODE in('000000','018265','018594','017897','019069');
+ 
+--导入仓储数据
+delete from basic_warehouse ;
+insert into basic_warehouse 
+select basic_warehouse_seq.nextval,'0000',warehouse_code,t.warehouse_name,'','',
+'','','','','','',1,0,'',1
+from basic_warehouse@erpzs t;
+ 
+--导入品名大类
+delete from basic_pntree ;
+insert into basic_pntree
+select basic_pntree_seq.nextval,'0000',pntree_code,t.pntree_name,-1,
+pntree_code,null
+from basic_pntree@erpzs t;
+ 
+--导入品名
+delete from basic_partsname ;
+insert into basic_partsname 
+select basic_partsname_seq.nextval,'0000',t.partsname_code,t.partsname_name,'',t.pntree_name,
+'','','','','','','',0,0.17,'','','',0,0,3,null,0,0,a.pntree_code,'0003',1,1,'理计',0,null,null,null
+from basic_partsname@erpzs t,basic_pntree a
+where t.pntree_name=a.pntree_name;
+ 
+--导入产地
+delete from basic_productarea ;
+insert into basic_productarea 
+select basic_productarea_seq.nextval,'0000',t.productarea_code,t.productarea_name,null,null,null
+from basic_productarea@erpzs t;
+ 
+--导入物资(t.goods_pmeterweight 这个在仓储这边启用了goodsProperty3字段)
+delete from basic_goodscode ;
+insert into basic_goodscode 
+select basic_goodscode_seq.nextval,
+'0000',t.goodscode_code,t.pntree_name,t.productarea_name,t.partsname_name,t.goods_material,t.goods_spec,t.goods_spec1,t.goods_spec2,t.goods_spec3,t.goods_spec4,t.goods_spec5,
+t.goods_property1,t.goods_property2, t.goods_pmeterweight,t.goods_property4,t.goods_property5,t.goods_numproperty1,t.goods_numproperty2,
+t.partsname_mnemcode,t.partsname_numunit,t.partsname_weightunit,t.partsname_remark,CONCAT(t.GOODSTREE_CODE,CONCAT('.',t.partsname_name)),'0003',0,1,1,'理计',null,null,'','',0.17,null,null,'0001',0,0,
+t.sta_partsname_name,t.sta_goods_material,t.sta_goods_spec,t.sta_productarea_name,t.workgroup_name,t.data_awedit,
+t.m98s_weight,t.l98s_weight,t.l98s_price,t.m10s_weight,t.l10s_weight,t.l10s_price,t.gcfw,t.zlfw
+from basic_goodscode@erpzs t;
+ 
+--导入sumgood 
+delete from storage_sumgoods ;
+insert into storage_sumgoods 
+select storage_sumgoods_seq.nextval,t.sumgoods_batch,'0000',t.goods_class,t.partsname_split,t.goods_fulfill,t.goods_remark,t.data_innerflag,t.data_vernum,
+t.warehouse_code,t.goodstree_code,t.pntree_name,t.productarea_name,t.partsname_name,t.goods_material,t.goods_spec,t.goods_spec1,t.goods_spec2,t.goods_spec3,t.goods_spec4,
+t.goods_property1,t.goods_property2,t.goods_property3,t.goods_property4,t.goods_property5,t.goods_numproperty1,t.goods_numproperty2,t.goods_contract,
+t.goods_contractbatch,t.goods_contractstr1,t.goods_contractstr2,t.goods_contractstr3,t.goods_contractstr4,t.goods_contractstr5,t.goods_entrybatch,t.goods_entrybatchold,
+t.goods_entrystr1,t.goods_entrystr2,t.goods_entrystr3,t.goods_entrystr4,t.goods_entrystr5,null,t.goods_assistnum,null,
+t.goods_org,
+t.goods_dept ,
+null,0,t.company_code,t.company_name,t.partsname_numunit,t.partsname_weightunit,t.goods_metering,
+0,0,0,null,null,null,null,'0003',t.goods_num,
+t.goods_contractstr1,t.goods_contractstr2,t.goods_weight,t.goods_assistweight
+from warehouse_sumgoods@erpzs t;
+
+--导入sumgood_pro
+delete from storage_sumgoods_pro ;
+insert into storage_sumgoods_pro 
+select storage_sumgoods_pro_seq.nextval, t.sumgoods_batch,'0000',t.data_vernum,t.goods_fulfill,t.goods_num,0,0,t.goods_weight,
+t.goods_assistweight,t.goods_supplynum,t.goods_supplyweight,t.goods_supplyassistweight,t.goods_slocknum,t.goods_slockweight,t.goods_slockassistweight,0,
+0,0,0,0,0,t.goods_billnum,t.goods_billweight,t.goods_billassistweight,
+t.goods_extnum,t.goods_extweight,t.goods_extassistweight,t.goods_macnum,t.goods_macweight,t.goods_macassistweight
+from warehouse_sumgoods_pro@erpzs t;
+
+--导入good
+delete from storage_goods ;
+insert into storage_goods 
+select storage_goods_seq.nextval,t.goods_codebill,'0000',t.goods_date,t.goods_fulfill,t.goods_remark,t.data_vernum,t.billtype_code,t.sumgoods_batch,t.warehouse_code,t.goodstree_code,t.pntree_name,
+t.productarea_name,t.partsname_name,t.goods_material,t.goods_spec,t.goods_spec1,t.goods_spec2,t.goods_spec3,t.goods_spec4,t.goods_property1,t.goods_property2,t.goods_property3,
+t.goods_property4,t.goods_property5,t.goods_numproperty1,t.goods_numproperty2,t.goods_contract,t.goods_contractbatch,t.goods_contractstr1,t.goods_contractstr2,t.goods_contractstr3,
+t.goods_contractstr4,t.goods_contractstr5,t.goods_entrybatch,t.goods_entrybatchold,t.goods_entrystr1,t.goods_entrystr2,t.goods_entrystr3,t.goods_entrystr4,t.goods_entrystr5,
+t.goods_codebillold,t.goods_codestr1,t.goods_codestr2,t.goods_codestr3,t.goods_codestr4,t.goods_codestr5,t.goods_codestr6,t.goods_codestr7,t.goods_codestr8,t.goods_codestr9,
+t.goods_codestr10,t.goods_codenum1,t.goods_codenum2,t.goods_codenum3,t.partsname_split,null,t.GOODS_ASSISTNUM,0,
+t.goods_org,
+t.goods_dept,
+null,0,t.company_code,t.company_name,t.partsname_numunit,t.partsname_weightunit,t.goods_metering,0,0,0,
+null,null,null,null,'0003',t.goods_num,0,0,t.goods_weight,t.goods_assistweight,null
+from warehouse_goods@erpzs t;
+
+--导入goods_pro
+delete from storage_goods_pro ;
+insert into storage_goods_pro 
+select storage_goods_pro_seq.nextval, '0000',t.goods_codebill,t.goods_codebillold,t.data_vernum,t.goods_fulfill,t.sumgoods_batch,t.goods_num,0,0,
+t.goods_weight,t.goods_assistweight,t.goods_supplynum,t.goods_supplyweight,t.goods_supplyassistweight,t.goods_slocknum,t.goods_slockweight,t.goods_slockassistweight,0,
+0,0,t.goods_ordnum,t.goods_ordweight,t.goods_ordassistweight,t.goods_billnum,t.goods_billweight,t.goods_billassistweight,
+t.goods_extnum,t.goods_extweight,t.goods_extassistweight,t.goods_macnum,t.goods_macweight,t.goods_macassistweight,null 
+from warehouse_goods_pro@erpzs t;
+ 
+注意：
+1、数据导完后，需要用超级管理员帐号gdsdp登录仓储系统，给gdsdp分配数据权限和操作权限
+2、需启用加工任务的审核功能、配置审核流程；物资损益也需要开启审核
+导入完成后，比对一下两边数据库数据数量是否一致：
+/*数据比对*/
+select count(t.goods_codebill) from STORAGE_GOODS t where t.goods_codebill not in (select goods_codebill from WAREHOUSE_GOODS@erpzs );
+select count(t.goods_codebill) from WAREHOUSE_GOODS@erpzs t where t.goods_codebill not in (select goods_codebill from STORAGE_GOODS);
+select count(t.goods_codebill) from STORAGE_GOODS_pro t where t.goods_codebill not in (select goods_codebill from WAREHOUSE_GOODS_pro@erpzs );
+select count(t.goods_codebill) from WAREHOUSE_GOODS_pro@erpzs t where t.goods_codebill not in (select goods_codebill from STORAGE_GOODS_pro);
+select count(t.SUMGOODS_BATCH) from STORAGE_SUMGOODS t where t.SUMGOODS_BATCH not in (select SUMGOODS_BATCH from WAREHOUSE_SUMGOODS@erpzs );
+select count(t.SUMGOODS_BATCH) from WAREHOUSE_SUMGOODS@erpzs t where t.SUMGOODS_BATCH not in (select SUMGOODS_BATCH from STORAGE_SUMGOODS);
+select count(t.SUMGOODS_BATCH) from STORAGE_SUMGOODS_pro t where t.SUMGOODS_BATCH not in (select SUMGOODS_BATCH from WAREHOUSE_SUMGOODS_pro@erpzs );
+select count(t.SUMGOODS_BATCH) from WAREHOUSE_SUMGOODS_pro@erpzs t where t.SUMGOODS_BATCH not in (select SUMGOODS_BATCH from STORAGE_SUMGOODS_pro);
+select count(*) from basic_goodscode@erpzs
+union all
+select count(*) from basic_goodscode;
