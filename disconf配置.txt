@@ -1,0 +1,86 @@
+
+
+安装依赖软件
+
+安装 Mysql
+安装 Tomcat（apache-tomcat-7.0.50）
+安装 Nginx（nginx/1.5.3）
+安装 zookeeeper （zookeeper-3.3.0） 一个实例就可以了
+安装 Redis （2.4.5） 需要2个实例但不是集群
+
+
+git clone https://github.com/knightliao/disconf.git
+
+
+cd disconf-web
+
+mvn clean package -Dmaven.test.skip=true
+
+target文件夹下有war包。就是项目 disconf-web.war  
+
+
+
+下载好对应的代码，准备对应的配置文件：将disconf-web/profile/rd目录下的文件copy到build/online-resources目录下
+
+- jdbc-mysql.properties (数据库配置)
+- redis-config.properties (Redis配置)
+- zoo.properties (Zookeeper配置)
+- application.properties (应用配置）
+
+注意，记得执行将application-demo.properties复制成application.properties：
+
+cp application-demo.properties application.properties 
+
+
+初始化数据库：
+
+对应的数据库脚本都在disconf-web/sql目录下，依次执行对应的sql语句就可以了
+ 0-init_table.sql
+1-init_data.sql
+201512/20151225.sql
+20160701/20160701.sql
+
+
+
+把项目配置好后放入tomcat ROOT目录下
+
+启动tomcat
+
+
+部署前端（nginx）
+
+修改 nginx.conf，在HTTP标签中添加以下内容：
+
+upstream disconf {
+    # 对应tomcat
+    server 127.0.0.1:8080;
+}
+server {
+    listen   8081;
+    server_name localhost;
+    access_log /home/work/var/logs/disconf/access.log;
+    error_log /home/work/var/logs/disconf/error.log;
+    location / {
+        # 注意目录不能是/root 那个目录是外网禁止访问的会403错误的
+        # 这个html下面的文件就是disconf/disconf-web/html下的文件
+        root /home/work/dsp/disconf-rd/war/html;
+        if ($query_string) {
+            expires max;
+        }
+    }
+    location ~ ^/(api|export) {
+        proxy_pass_header Server;
+        proxy_set_header Host $http_host;
+        proxy_redirect off;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Scheme $scheme;
+        proxy_pass http://disconf;
+    }
+}
+
+
+访问 http://localhost:8081
+
+
+
+
