@@ -1,0 +1,133 @@
+Maven生命周期
+
+Maven生命周期（Build Lifecycle）就是对构建过程的抽象，也就是说Maven使用生命周期来完成项目的构建。但是，maven只定义了抽象的生命周期，具体的实现是由插件来完成的（类似于模板方法设计模式）。
+
+Maven包含三套内置的生命周期：
+
+周期	作用
+clean	清理项目
+default	构建项目
+site	生成项目站点文档
+阶段（phases）
+
+每个生命周期都包含不同的阶段，这些阶段都是有顺序的，当你执行一个阶段时，处于该生命周期下的当前执行阶段之前的阶段都会被执行，以确保顺利的构建。三套生命周期分别包含以下阶段：
+
+clean生命周期
+
+阶段名称	作用
+pre-clean	执行一些清理前需要完成的工作
+clean	清理上一次构建生成的文件
+post-clean	执行一些清理后需要完成的工作
+default生命周期
+
+阶段名称	作用
+validate	校验项目是否正确，检查必要信息是否可用
+initialize	构建状态初始化（比如，设置属性或生成目录）
+generate-source	生成编译中包含的源代码
+process-source	处理源代码（如过滤一些值）
+generate-resources	生成打包包含的资源文件
+process-resources	复制并处理资源到目标目录，准备打包
+compile	编译项目源代码
+process-classes	后处理编译生成的文件，例如：对class文件进行字节码增强
+generate-test-sources	生成编译中包含的测试源码
+process-test-sources	处理测试源代码，例如：过滤一些值
+generate-test-resources	创建测试用的资源文件
+process-test-resources	复制并处理资源到目标测试目录
+test-compile	编译测试源码放入测试目标文件夹中
+process-test-classes	后处理测试编译生成的文件，例如：对class文件进行字节码增强，对Maven 2.0.5及以上有效
+test	使用单元测试框架运行测试。测试代码不会被打包或者部署。
+prepare-package	执行必要的操作，在真正打包前准备一个包。这通常会产生一个未打包、处理过版本。（Maven 2.1及以上）
+package	接受编译好的代码，打包成可发布的格式，如：JAR
+pre-integration-test	在集成测试执行前进行些必要的操作。这也许会涉及相关的东西，例如安装必须的环境。
+integration-test	处理并将包文件部署到集成测试运行的环境
+post-integration-test	集成测试执行之后进行的必要操作。这可能包含了清理环境操作。
+verify	运行一些校验去验证包是否有效，是否符合质量标准。
+install	安装包到本地仓库，供本地其他项目依赖使用
+deploy	将最终的包复制到远程仓库，供其他开发人员和Maven项目使用
+site生命周期
+
+阶段名称	作用
+pre-site	执行一些在生成站点之前需要完成的工作
+site	生成项目站点文档
+post-site	执行一些在生成站点之后需要完成的工作
+site-deploy	将生成的站点文件发布到远程服务器上
+插件目标（Plugin Goal）
+
+插件能够为Maven提供不同的功能，而一个插件可能包含多个插件目标。比如，如下是插件 maven-dependency-plugin 包含的三个插件目标：
+
+插件目标	作用
+dependency:analyze	分析项目依赖
+dependency:tree	列出项目依赖树
+dependency:list	列出项目所有已解析的依赖
+命令中使用冒号（：）分隔插件和插件目标，比如compiler:compile表示 maven-compiler-plugin 插件的 compile 目标。
+
+插件绑定（Plugin Binding）
+
+前面说过，Maven只是定义了抽象的生命周期，生命周期阶段具体执行的操作是由其绑定的插件目标实现的。也就是说插件目标有一下两种方式被执行：
+
+通过绑定到生命周期阶段，而在生命周期阶段执行时被调用
+通过直接调用的方式（也就是“plugin:goal”的方式）在生命周期阶段外执行
+NOTE：一个插件目标可以绑定到多个生命周期阶段，一个生命周期阶段也能绑定多个插件。一个生命周期阶段绑定多个插件目标的情况，其执行顺序是按照POM文件中插件目标定义的顺序。
+
+默认插件绑定
+
+我们怎样才能够绑定插件目标到生命周期阶段呢？两种方式：
+
+Maven内置默认绑定
+在POM文件中自定义绑定
+对于default生命周期，Maven会根据不同的packaging，绑定不同的插件目标。
+
+Clean 生命周期绑定
+
+生命周期	插件目标
+clean	clean:clean
+Default 生命周期绑定 - Packaging ejb/ejb3/jar/par/rar/war
+
+生命周期	插件目标
+process-resources	resources:resources
+compile	compiler:compile
+process-test-resources	resources:testResources
+test-compile	compiler:testCompile
+test	surefire:test
+package	ejb:ejb或ejb3:ejb3或jar:jar或par:par或rar:rar或war:war
+install	install:install
+deploy	deploy:deploy
+Site 生命周期绑定
+
+生命周期	插件目标
+site	site:site
+site-deploy	site:deploy
+其他默认的插件目标绑定请参考Maven官方文档。
+
+自定义绑定
+
+自定义绑定可将一个插件目标绑定到任意构建生命周期阶段上。要实现自定义绑定，需要在project > plugins > plugin中声明。
+
+<project>
+  ...
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>2.1.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  ...
+</project>
+
+以上示例中，声明了maven-source-plugin（使用groupId、artifactId、version指定）。然后在<executions>元素下指定多个任务<execution>，通过指定多个<execution>，就可以把相同插件的目标绑定到不同的生命周期阶段。<id>指定任务名称（在一个插件中必须唯一），<phase>指定到的生命周期阶段，<goal>指定插件目标。
+
+如果没有指定<phase>，那么就会绑定到插件默认的生命周期阶段上。如果插件没有默认生命周期阶段，那么插件目标将不会被执行。
+
+通过以上的配置，现在执行mvn verify将看到maven-source-plugin的jar-no-fork目标被执行。
