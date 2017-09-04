@@ -1,0 +1,1405 @@
+﻿ 
+第一部分：cas服务器端连接mysql配置
+标签： casshirospring security
+2016-01-13 13:55 3730人阅读 评论(2) 收藏 举报
+ 分类：
+cas（3） 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+目录(?)[+]
+第一部分 cas服务器端连接mysql配置
+　　因公司要求使用cas服务器，公司原来有一个使用ajax方式进行单点登录的cas服务器，在项目上线后，发现问题太多，改为使用正常方式的cas服务器。 
+　　客户端项目用到了两种权限管理框架，分别是shiro和spring security。 
+　　整个过程分四部分记录修改过程，第一部分记录cas服务器连接MySQL配置；第二部分记录cas服务器增加登录验证码；第三部分记录shiro的配置；第四部分记录spring security的配置。
+　　cas服务器端下载地址：http://developer.jasig.org/cas/ 
+　　cas客户端下载地址：http://developer.jasig.org/cas-clients/ 
+　　本文使用版本cas-server-4.0.0-release
+　　试过了最新的4.1.3，使用jetty:run和tomcat都没有本法正常启动，所以使用了此版本。本版本在修改默认语言为中文时发现了一个bug，参考cas-server-4.1.3进行了修复。
+（一）下载cas源码，去掉多去的项目
+　　cas-server包含很多项目，基础只需要cas-server-core、cas-server-webapp、cas-server-webapp-support三个项目。因为需要连接数据库验证用户名和密码，保留了cas-server-support-jdbc项目。 
+　　因为cas使用了log4j，项目运行路径时包含中文路径会报错，但是不影响使用。 
+　　可以使用eclipse的run on server启动cas，要修改Server工程中server.xml中Context节点，保持docBase和path一致，即可启动成功。
+<Context docBase="cas-server-webapp" path="/cas-server-webapp" reloadable="true"
+    source="org.eclipse.jst.j2ee.server:cas-server-webapp"/>
+
+　　引入工程后，子项目的pom文件会出现警告，可以在cas-server的pom文件中，把警告提到的插件移动到pluginManagement的plugins节点下。并去掉com.mycila.maven-license-plugin插件。
+（二）去掉https
+　　deployerConfigContext.xml：找到id为proxyAuthenticationHandler的bean，增加p:requireSecure="false"
+<bean id="proxyAuthenticationHandler" class="org.jasig.cas.authentication.handler.support.HttpBasedServiceCredentialsAuthenticationHandler" p:httpClient-ref="httpClient" p:requireSecure="false" />
+
+ticketGrantingTicketCookieGenerator.xml： 
+　　warnCookieGenerator.xml：p:cookieSecure="true"改为p:cookieSecure="false"
+<bean id="ticketGrantingTicketCookieGenerator" class="org.jasig.cas.web.support.CookieRetrievingCookieGenerator"
+        p:cookieSecure="false"
+        p:cookieMaxAge="-1"
+        p:cookieName="CASTGC"
+        p:cookiePath="/cas" />
+
+<bean id="warnCookieGenerator" class="org.jasig.cas.web.support.CookieRetrievingCookieGenerator"
+        p:cookieSecure="false"
+        p:cookieMaxAge="-1"
+        p:cookieName="CASPRIVACY"
+        p:cookiePath="/cas" />
+
+（三）修改默认语言为中文
+　　cas-server-4.0.0中有一个bug，需要修改org.jasig.cas.web.viewCasReloadableMessageBundle类中的getMessageInternal()方法
+final String filename = this.basenames[i] + "_" + locale.getLanguage();
+1
+1
+改为
+final String filename = this.basenames[i] + "_" + locale;
+1
+1
+　　messages_zh_CN.properties中缺少了一些中文提示，因此从cas-server-4.1.3中复制了一个覆盖原文件。 
+cas-server-4.1.3下载地址：https://github.com/Jasig/cas/tree/v4.1.3
+　　现在cas-server可以部署到tomcat中并正常启动，在deployerConfigContext.xml的id为deployerConfigContext.xml的bean中保存了默认的用户名和密码。
+<bean id="primaryAuthenticationHandler" class="org.jasig.cas.authentication.AcceptUsersAuthenticationHandler">
+        <property name="users">
+            <map>
+                <entry key="casuser" value="Mellon"/>
+            </map>
+        </property>
+    </bean>
+
+（四）启用cas登出时根据service跳转页面的功能
+　　因为客户端项目在登出后需要跳转到登录页面，需要开启cas登出后跳转页面的功能。 
+　　cas-servlet.xml：修改id为logoutAction的bean，p:followServiceRedirects="${cas.logout.followServiceRedirects:false}"改为true。
+<bean id="logoutAction" class="org.jasig.cas.web.flow.LogoutAction" 
+    p:servicesManager-ref="servicesManager" 
+    p:followServiceRedirects="${cas.logout.followServiceRedirects:true}"/>
+
+（五）增加连接数据库验证用户名和密码的功能
+1、修改pom文件，增加jdbc支持
+　　修改cas-server工程的pom文件，注释掉没有用到的modules。本文连接的数据库是mysql，使用druid连接池。pom增加如下依赖：
+<dependency>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId>
+    <version>${version.mysql}</version></dependency><dependency>
+    <groupId>com.alibaba</groupId>
+    <artifactId>druid</artifactId>
+    <version>${version.druid}</version></dependency>
+
+　　properties节点
+<version.druid>1.0.16</version.druid><version.mysql>5.1.34</version.mysql>
+1
+2
+1
+2
+　　修改cas-server-support-jdbc工程的pom文件，增加依赖：
+<dependency>
+    <groupId>org.springframework</groupId>
+    <artifactId>spring-jdbc</artifactId></dependency><!-- 可选，项目需要使用salt加盐算法计算密码才引用 --><dependency>
+    <groupId>org.apache.shiro</groupId>
+    <artifactId>shiro-core</artifactId></dependency>
+
+　　修改cas-server-webapp工程的pom文件，增加依赖：
+<dependency>
+    <groupId>org.jasig.cas</groupId>
+    <artifactId>cas-server-support-jdbc</artifactId>
+    <version>${project.version}</version></dependency><dependency>
+    <groupId>mysql</groupId>
+    <artifactId>mysql-connector-java</artifactId></dependency><dependency>
+    <groupId>com.alibaba</groupId>
+    <artifactId>druid</artifactId></dependency>
+
+2、增加用户名密码验证处理
+　　cas-server-support-jdbc工程中自带4个验证处理类，可以通过配置的方法来使用。这四个不满足本项目的需求，因此新增了一个自定义验证处理类。 
+　　deployerConfigContext.xml：去掉默认的primaryAuthenticationHandler，增加自定义处理类，并增加druid连接池。
+<!-- 自定义验证处理类 --><bean id="primaryAuthenticationHandler" 
+    class="org.jasig.cas.adaptors.jdbc.QueryAndSaltDatabaseAuthenticationHandler">
+    <constructor-arg name="dataSource" ref="dataSource" />
+    <constructor-arg name="sql" value="${jdbc.selectSQL}" />
+    <!-- 加密算法 -->
+    <constructor-arg name="algorithmName" value="${algorithmName}"/>
+    <property name="numberOfIterations" value="${numberOfIterations}" />
+    <!-- 数据库中密码字段 -->
+    <property name="passwordFieldName" value="${passwordFieldName}" />
+    <!-- 数据库中salt字段 -->
+    <property name="saltFieldName" value="${saltFieldName}" /></bean>
+<!-- 数据源配置, 使用druid连接池 --><bean id="dataSource" class="com.alibaba.druid.pool.DruidDataSource" 
+    init-method="init" destroy-method="close">
+    <property name="driverClassName" value="${jdbc.driver}" />
+    <property name="url" value="${jdbc.url}" />
+    <property name="username" value="${jdbc.username}" />
+    <property name="password" value="${jdbc.password}" />
+    <!-- 配置监控统计拦截的filters -->
+    <property name="filters" value="${druid.filters}" />
+    <property name="connectionProperties" value="${druid.connectionProperties}" />
+    <!-- 配置初始化大小、最小、最大 -->
+    <property name="initialSize" value="${druid.initialSize}"/>
+    <property name="minIdle" value="${druid.minIdle}"/>
+    <property name="maxActive" value="${druid.maxActive}"/>
+
+    <!-- 配置获取连接等待超时的时间 -->
+    <property name="maxWait" value="${druid.maxWait}"/>
+    <!-- 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒 -->
+    <property name="timeBetweenEvictionRunsMillis" value="${druid.timeBetweenEvictionRunsMillis}" />
+
+    <!-- 配置一个连接在池中最小生存的时间，单位是毫秒 -->
+    <property name="minEvictableIdleTimeMillis" value="${druid.minEvictableIdleTimeMillis}" />
+
+    <property name="validationQuery" value="${druid.validationQuery}" />
+    <property name="testWhileIdle" value="${druid.testWhileIdle}" />
+    <property name="testOnBorrow" value="${druid.testOnBorrow}" />
+    <property name="testOnReturn" value="${druid.testOnReturn}" />
+
+    <!-- 打开PSCache，并且指定每个连接上PSCache的大小  如果用Oracle，则把poolPreparedStatements配置为true，mysql可以配置为false。-->
+    <property name="poolPreparedStatements" value="${druid.poolPreparedStatements}" />
+    <property name="maxPoolPreparedStatementPerConnectionSize" value="${druid.maxPoolPreparedStatementPerConnectionSize}" /></bean>
+
+3、自定义验证处理类：QueryAndSaltDatabaseAuthenticationHandler
+　　参考cas-server-4.1.3中QueryAndEncodeDatabaseAuthenticationHandler类进行编写，修改authenticateUsernamePasswordInternal(）和digestEncodedPassword()。
+/*
+ * Licensed to Jasig under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work
+ * for additional information regarding copyright ownership.
+ * Jasig licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License.  You may obtain a
+ * copy of the License at the following location:
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */package org.jasig.cas.adaptors.jdbc;
+import java.security.GeneralSecurityException;import java.util.Date;import java.util.Map;
+import javax.security.auth.login.AccountNotFoundException;import javax.security.auth.login.FailedLoginException;import javax.sql.DataSource;import javax.validation.constraints.NotNull;
+import org.apache.shiro.crypto.hash.ConfigurableHashService;import org.apache.shiro.crypto.hash.DefaultHashService;import org.apache.shiro.crypto.hash.HashRequest;import org.jasig.cas.authentication.AccountDisabledException;import org.jasig.cas.authentication.HandlerResult;import org.jasig.cas.authentication.PreventedException;import org.jasig.cas.authentication.UsernamePasswordCredential;import org.jasig.cas.authentication.principal.SimplePrincipal;import org.springframework.dao.DataAccessException;import org.springframework.dao.IncorrectResultSizeDataAccessException;
+/**
+ * Class that if provided a query that returns a password (parameter of query
+ * must be username) will compare that password to a translated version of the
+ * password provided by the user. If they match, then authentication succeeds.
+ * Default password translator is plaintext translator.
+ *
+ * @author Scott Battaglia
+ * @author Dmitriy Kopylenko
+ * @author Marvin S. Addison
+ *
+ * @since 3.0
+ */public class QueryAndSaltDatabaseAuthenticationHandler extends AbstractJdbcUsernamePasswordAuthenticationHandler {
+
+    private static final String DEFAULT_PASSWORD_FIELD = "password";
+    private static final String DEFAULT_SALT_FIELD = "salt";
+    private static final long DEFAULT_ITERATIONS = 1024;
+
+    /**
+     * The Algorithm name.
+     */
+    @NotNull
+    protected final String algorithmName;
+
+    /**
+     * The Sql statement to execute.
+     */
+    @NotNull
+    protected final String sql;
+
+    /**
+     * The Sql statement to execute.
+     */
+    @NotNull
+    protected final String updateSql;
+
+    /**
+     * The Password field name.
+     */
+    @NotNull
+    protected String passwordFieldName = DEFAULT_PASSWORD_FIELD;
+
+    /**
+     * The Salt field name.
+     */
+    @NotNull
+    protected String saltFieldName = DEFAULT_SALT_FIELD;
+
+    /**
+     * The number of iterations. Defaults to 0.
+     */
+    protected Long numberOfIterations = DEFAULT_ITERATIONS;
+
+
+    public QueryAndSaltDatabaseAuthenticationHandler(final DataSource dataSource,
+                                                       final String sql,
+                                                       final String updateSql,
+                                                       final String algorithmName) {
+        super();
+        setDataSource(dataSource);
+        this.sql = sql;
+        this.updateSql = updateSql;
+
+        this.algorithmName = algorithmName;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    protected final HandlerResult authenticateUsernamePasswordInternal(final UsernamePasswordCredential credential)
+            throws GeneralSecurityException, PreventedException {
+        final String username = credential.getUsername();
+        final String encodedPsw = this.getPasswordEncoder().encode(credential.getPassword());
+        try {
+            final Map<String, Object> values = getJdbcTemplate().queryForMap(this.sql, username);
+            //检查用户状态
+            if(!values.containsKey("status")){
+                throw new AccountDisabledException();
+            }
+            final String status = values.get("status").toString();
+            if ("00".equals(status)) {
+                //禁用
+                throw new AccountDisabledException();
+            }else if("02".equals(status)){
+                //删除
+                throw new AccountNotFoundException();
+            }
+            //效验密码
+            final String digestedPassword = digestEncodedPassword(encodedPsw, values);
+            if (!values.get(this.passwordFieldName).equals(digestedPassword)) {
+                throw new FailedLoginException("Password does not match value on record.");
+            }
+            int flag = getJdbcTemplate().update(updateSql, new Date(), username);
+            logger.debug("更新{}最后登录时间：{}", username, flag);
+        } catch (final IncorrectResultSizeDataAccessException e) {
+            if (e.getActualSize() == 0) {
+                throw new AccountNotFoundException(username + " not found with SQL query");
+            } else {
+                throw new FailedLoginException("Multiple records found for " + username);
+            }
+        } catch (final DataAccessException e) {
+            throw new PreventedException("SQL exception while executing query for " + username, e);
+        }
+        return createHandlerResult(credential, new SimplePrincipal(username), null);
+    }
+
+    /**
+     * Digest encoded password.
+     *
+     * @param encodedPassword the encoded password
+     * @param values the values retrieved from database
+     * @return the digested password
+     */
+    protected String digestEncodedPassword(final String encodedPassword, final Map<String, Object> values) {
+        final ConfigurableHashService hashService = new DefaultHashService();
+        //配置
+        hashService.setHashAlgorithmName(this.algorithmName);
+        hashService.setHashIterations(numberOfIterations.intValue());
+        if (!values.containsKey(this.saltFieldName)) {
+            throw new RuntimeException("Specified field name for salt does not exist in the results");
+        }
+
+        final String dynaSalt = values.get(this.saltFieldName).toString();
+        final HashRequest request = new HashRequest.Builder()
+                                    .setSalt(dynaSalt)
+                                    .setSource(encodedPassword)
+                                    .build();
+        return hashService.computeHash(request).toHex();
+    }
+
+    /**
+     * Sets password field name. Default is {@link #DEFAULT_PASSWORD_FIELD}.
+     *
+     * @param passwordFieldName the password field name
+     */
+    public final void setPasswordFieldName(final String passwordFieldName) {
+        this.passwordFieldName = passwordFieldName;
+    }
+
+    /**
+     * Sets salt field name. Default is {@link #DEFAULT_SALT_FIELD}.
+     *
+     * @param saltFieldName the password field name
+     */
+    public final void setSaltFieldName(final String saltFieldName) {
+        this.saltFieldName = saltFieldName;
+    }
+
+    /**
+     * Sets number of iterations. Default is 0.
+     *
+     * @param numberOfIterations the number of iterations
+     */
+    public final void setNumberOfIterations(final Long numberOfIterations) {
+        this.numberOfIterations = numberOfIterations;
+    }
+}
+
+4、jdbc.properties
+　　在propertyFileConfigurer.xml修改property-placeholder节点。
+<context:property-placeholder location="/WEB-INF/*.properties"/>
+1
+1
+　　在WEB-INF目录下新增jdbc.properties
+jdbc.driver=com.mysql.jdbc.Driver
+jdbc.url=jdbc:mysql://192.168.5.127:3306/ucenter?useUnicode=true&characterEncoding=utf-8
+jdbc.username=root
+jdbc.password=XlYr6hqtsD3YulwHugnpy/FgYywQT2lzuekedA8TtP8kj62MHqa6txQIMIygqD5DVjTv+q5i7V6+yCfqfrE6LA==
+druid.filters=config
+druid.connectionProperties=config.decrypt=true;config.decrypt.key=MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAKRTQGQ4hl08ZckgQKLLvt3oEFfwrl3Jdt23j4Qc9ZMVooK7sgZ/c7GK4fEXI/vTXFVPjV/utcvPbKpF2LhTJCcCAwEAAQ==
+#druid connection pool settings
+druid.initialSize=10
+druid.minIdle=10
+druid.maxActive=50
+druid.maxWait=60000
+druid.timeBetweenEvictionRunsMillis=60000
+druid.minEvictableIdleTimeMillis=300000
+druid.validationQuery=SELECT 'x'
+druid.testWhileIdle=true
+druid.testOnBorrow=false
+druid.testOnReturn=false
+druid.poolPreparedStatements=true
+druid.maxPoolPreparedStatementPerConnectionSize=20
+
+jdbc.selectSQL=SELECT `password`,`salt`,`status` FROM ucs_user WHERE username = ?
+algorithmName=SHA-1
+numberOfIterations=1024
+passwordFieldName=password
+saltFieldName=salt
+
+
+
+
+第二部分：cas服务器增加登录验证码
+标签： cas
+2016-01-13 15:54 1542人阅读 评论(0) 收藏 举报
+ 分类：
+cas（3） 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+目录(?)[+]
+第二部分：cas服务器增加登录验证码
+（一）验证码配置
+1、新增验证码工作流xml
+　　复制login-webflow.xml，重命名为login-webflow-captcha.xml。 
+　　cas-servlet.xml：修改id为loginFlowRegistry的loginFlowRegistry，path改为/WEB-INF/login-webflow-captcha.xml
+<webflow:flow-registry id="loginFlowRegistry" flow-builder-services="builder">
+    <!-- <webflow:flow-location path="/WEB-INF/login-webflow.xml" id="login" /> -->
+    <!-- 增加验证码 -->
+    <webflow:flow-location path="/WEB-INF/login-webflow-captcha.xml" id="login" /></webflow:flow-registry>
+
+2、增加依赖
+　　cas-server中pom文件增加kaptcha依赖，cas-server-webapp-support增加kaptcha依赖。 
+　　cas-server：
+<dependency>
+    <groupId>com.github.axet</groupId>
+    <artifactId>kaptcha</artifactId>
+    <version>${version.kcaptcha}</version></dependency>
+
+<version.kcaptcha>0.0.9</version.kcaptcha>
+1
+1
+　　cas-server-webapp-support：
+<dependency>
+    <groupId>com.github.axet</groupId>
+    <artifactId>kaptcha</artifactId></dependency>
+
+3、web.xml增加kaptcha验证码配置
+<!-- kaptcha验证码 --><servlet>
+    <servlet-name>kaptcha</servlet-name>
+    <servlet-class>com.google.code.kaptcha.servlet.KaptchaServlet</servlet-class></servlet><servlet-mapping>
+    <servlet-name>kaptcha</servlet-name>
+    <url-pattern>/captcha.jpg</url-pattern></servlet-mapping>
+
+4、新增验证码效验Action类
+　　顺便加入了用户名和密码的非空验证。 
+　　CaptchaValidateAction类放在cas-server-webapp-support的org.jasig.cas.web.flow包下。 
+　　需要在cas-servlet.xml新增配置。
+/**
+ * 用户名密码非空验证，验证码效验Action
+ */public class CaptchaValidateAction {
+    /** Authentication success result. */
+    public static final String SUCCESS = "success";
+
+    /** Authentication failure result. */
+    public static final String AUTHENTICATION_FAILURE = "authenticationFailure";
+
+    /** Error result. */
+    public static final String ERROR = "error";
+
+    /** Logger instance. **/
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
+
+    public final String submit(final RequestContext context,
+            final Credential credential, final MessageContext messageContext)
+            throws Exception {
+        final HttpServletRequest request = WebUtils
+                .getHttpServletRequest(context);
+        HttpSession session = request.getSession();
+        String captcha = (String) session
+                .getAttribute(com.google.code.kaptcha.Constants.KAPTCHA_SESSION_KEY);
+        session.removeAttribute(com.google.code.kaptcha.Constants.KAPTCHA_SESSION_KEY);
+
+        UsernamePasswordCaptchaCredential upc = (UsernamePasswordCaptchaCredential) credential;
+
+        //检查用户名是否为空
+        if (!StringUtils.hasText(upc.getUsername())
+                || !StringUtils.hasText(captcha)) {
+            messageContext.addMessage(new MessageBuilder().error().code("username.required").build());
+            return ERROR;
+        }
+        //检查密码是否为空
+        if (!StringUtils.hasText(upc.getPassword())
+                || !StringUtils.hasText(captcha)) {
+            messageContext.addMessage(new MessageBuilder().error().code("password.required").build());
+            return ERROR;
+        }
+
+        String submitCaptcha = upc.getCaptcha();
+        //检查验证码是否为空
+        if (!StringUtils.hasText(submitCaptcha)
+                || !StringUtils.hasText(captcha)) {
+            messageContext.addMessage(new MessageBuilder().error().code("captcha.required").build());
+            return ERROR;
+        }
+        if (submitCaptcha.equals(captcha)) {
+            return SUCCESS;
+        }
+        messageContext.addMessage(new MessageBuilder().error().code("error.authentication.captcha.bad").build());
+        return ERROR;
+    }
+}
+
+cas-servlet.xml：
+<bean id="captchaValidateAction" 
+    class="org.jasig.cas.web.flow.CaptchaValidateAction"/>
+
+5、新增验证码凭据
+　　cas-server-core中org.jasig.cas.authentication包新增UsernamePasswordCaptchaCredential类，继承原有的UsernamePasswordCredential。
+/**
+ * 自定义的接收登录验证码的实体类
+ */public class UsernamePasswordCaptchaCredential extends UsernamePasswordCredential {
+    private static final long serialVersionUID = 8317889802836113837L;
+
+    private String captcha;
+
+    public String getCaptcha() {
+        return captcha;
+    }
+
+    public void setCaptcha(String captcha) {
+        this.captcha = captcha;
+    }
+}
+
+6、修改工作流配置文件，增加验证码验证节点
+　　login-webflow-captcha.xml： 
+　　修改name=”credential”配置
+<var name="credential" class="org.jasig.cas.authentication.UsernamePasswordCaptchaCredential" />
+
+　　修改id为viewLoginForm的view-state
+<view-state id="viewLoginForm" view="casLoginView" model="credential">
+       <binder>
+           <binding property="username" />
+           <binding property="password" />
+           <!-- add -->
+           <binding property="captcha" />
+       </binder>
+       <on-entry>
+           <set name="viewScope.commandName" value="'credential'" />
+       </on-entry>
+    <!-- <transition on="submit" bind="true" validate="true" to="realSubmit"> -->
+    <transition on="submit" bind="true" validate="true" to="captchaValidate">
+           <evaluate expression="authenticationViaFormAction.doBind(flowRequestContext, flowScope.credential)" />
+       </transition></view-state>
+　　增加验证码效验节点
+<!-- add start --><action-state id="captchaValidate">
+    <evaluate expression="captchaValidateAction.submit(flowRequestContext, flowScope.credential, messageContext)" />
+    <transition on="error" to="generateLoginTicket" />
+    <transition on="success" to="realSubmit" />
+    <transition on="authenticationFailure" to="handleAuthenticationFailure" /></action-state><!-- add end -->
+7、增加对应的错误提示信息
+　　messages_zh_CN.properties中新增
+#add
+screen.welcome.label.captcha=\u9A8C\u8BC1\u7801:
+screen.welcome.label.captcha.accesskey=c
+captcha.required=\u5FC5\u987B\u5F55\u5165\u9A8C\u8BC1\u7801\u3002
+error.authentication.captcha.bad=\u9A8C\u8BC1\u7801\u8F93\u5165\u6709\u8BEF\u3002
+8、修改登录页面
+　　casLoginView.jsp：在password文本框后面新增验证码。
+<div class="row fl-controls-left">
+    <label for="captcha"><spring:message code="screen.welcome.label.captcha" /></label>
+    <spring:message code="screen.welcome.label.captcha.accesskey" var="captchaAccessKey" />
+    <table>
+        <tr>
+            <td>
+                <form:input cssClass="required" cssErrorClass="error" id="captcha" size="10" tabindex="2" path="captcha"  accesskey="${captchaAccessKey}" htmlEscape="true" autocomplete="off" />
+            </td>
+            <td align="left" valign="bottom" style="vertical-align: bottom;">
+                <img alt="<spring:message code="captcha.required" />" onclick="this.src='captcha.jpg?'+Math.random()" width="93" height="30" src="captcha.jpg">
+            </td>
+        </tr>
+    </table></div>
+
+
+
+第三部分 shiro集成spring使用cas单点登录配置
+（一）shiro单点登录
+　　配置的主要目的在于将登录页面改为${cas.server}?service=${cas.client}/login的形式，service后面为本地的回调地址。在cas服务器端登录成功后，会生成ticket返回给客户端，客户端的shiro使用ticket最为凭据保存起来。 
+　　 
+　　shiro配置单点登陆后，在注销时原始的cas-client只能删除HttpSession，不能删除shiro的Session，因此未使用shiro的session管理器。 
+　　如果想启用shiro的Session管理器，可以参考Shiro & CAS 实现单点登录。 
+　　原有的CasRealm在AuthenticationInfo中只保存了用户名作为principal，MyCasRealm中重写了此方法，改为保存用户信息类。 
+　　需要在pom增加依赖，shiro-cas会通过依赖传递自动增加cas-client-core-3.2.1的依赖。
+<!-- shiro --><dependency>
+    <groupId>org.apache.shiro</groupId>
+    <artifactId>shiro-spring</artifactId>
+    <version>1.2.3</version></dependency><dependency>
+    <groupId>org.apache.shiro</groupId>
+    <artifactId>shiro-cas</artifactId>
+    <version>1.2.3</version></dependency>
+1、spring-shiro.xml配置
+<?xml version="1.0" encoding="UTF-8"?><beans xmlns="http://www.springframework.org/schema/beans" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+    xmlns:util="http://www.springframework.org/schema/util"
+    xmlns:aop="http://www.springframework.org/schema/aop" 
+    xmlns:context="http://www.springframework.org/schema/context"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+    " default-lazy-init="false">
+    <description>Shiro安全配置</description>
+
+    <!-- 缓存管理器 -->
+    <bean id="cacheManager" class="com.whty.framework.base.common.cache.SpringCacheManagerWrapper">
+        <property name="cacheManager" ref="springCacheManager"/>
+    </bean>
+
+    <!-- Realm实现 -->
+    <bean id="casRealm" class="com.whty.oim.base.shiro.MyCasRealm">
+        <property name="cachingEnabled" value="true"/>
+        <property name="authenticationCachingEnabled" value="true"/>
+        <property name="authenticationCacheName" value="authenticationCache"/>
+        <property name="authorizationCachingEnabled" value="true"/>
+        <property name="authorizationCacheName" value="authorizationCache"/>
+        <!-- CAS Server -->
+        <property name="casServerUrlPrefix" value="${cas.server}"/>
+        <!-- 客户端的回调地址设置，必须和下面的shiro-cas过滤器拦截的地址一致 -->
+        <property name="casService" value="${cas.client}/login"/>
+    </bean>
+
+    <bean id="casSubjectFactory" class="org.apache.shiro.cas.CasSubjectFactory"/>
+    <!-- 安全管理器 -->
+    <bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+        <property name="realm" ref="casRealm"/>
+        <!-- <property name="sessionManager" ref="sessionManager"/> -->
+        <property name="cacheManager" ref="cacheManager"/>
+        <!-- sessionMode参数设置为native时，那么shrio就将用户的基本认证信息保存到缺省名称为shiro-activeSessionCache 的Cache中 -->
+        <!--<property name="sessionMode" value="native" />-->
+        <property name="subjectFactory" ref="casSubjectFactory"/>
+    </bean>
+
+    <!-- 相当于调用SecurityUtils.setSecurityManager(securityManager) -->
+    <bean class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+        <property name="staticMethod" value="org.apache.shiro.SecurityUtils.setSecurityManager"/>
+        <property name="arguments" ref="securityManager"/>
+    </bean>
+
+    <bean id="casFilter" class="org.apache.shiro.cas.CasFilter">
+        <!-- 配置验证错误时的失败页面  -->
+        <property name="failureUrl" value="${cas.client}"/>
+    </bean>
+
+    <bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+        <property name="securityManager" ref="securityManager" />
+        <!-- 设定角色的登录链接，这里为cas登录页面的链接可配置回调地址  -->
+        <property name="loginUrl" value="${cas.server}?service=${cas.client}/login" />
+        <property name="successUrl" value="/index" />
+        <property name="unauthorizedUrl" value="/"/> 
+        <property name="filters">
+            <util:map>
+                <!-- <entry key="authc" value-ref="authcFilter"/>
+                <entry key="captchaFilter" value-ref="captchaFilter"/> -->
+                <!-- 添加casFilter到shiroFilter -->
+                <entry key="cas" value-ref="casFilter"/>
+            </util:map>
+        </property>
+        <property name="filterChainDefinitions">
+            <value>
+            /logout = logout
+            /login = cas
+            /** = user
+            </value>
+        </property>
+    </bean>
+
+
+    <!--保证实现了Shiro内部lifecycle函数的bean执行 -->
+    <bean id="lifecycleBeanPostProcessor" class="org.apache.shiro.spring.LifecycleBeanPostProcessor" />
+</beans>
+2、cas.properties
+　　cas.server=http://192.168.5.129:8080/cas 
+　　cas.client=http://192.168.4.184:8091/ucs
+3、自定义Realm实现
+　　主要修改了CasRealm的doGetAuthenticationInfo()方法，CasRealm默认只保存了username，本系统改为保存ShiroUser对象。
+public class MyCasRealm extends CasRealm {
+
+    Logger logger = LoggerFactory.getLogger(MyCasRealm.class);
+
+    @Autowired
+    private UcsUserService ucsUserService;
+
+    @Autowired
+    private UcsRoleService ucsRoleService;
+
+    @Autowired
+    private UcsPermissionService ucsPermissionService;
+
+    @Value("${domain}")
+    private String domain;
+
+    /**
+     * 授权查询回调函数, 进行鉴权但缓存中无用户的授权信息时调用.
+     * 
+     * @see org.apache.shiro.realm.AuthorizingRealm#doGetAuthorizationInfo(org.apache.shiro.subject.PrincipalCollection)
+     */
+    @Override
+    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
+        ShiroUser shiroUser = (ShiroUser) principals.getPrimaryPrincipal();
+        UcsUser ucsUser = ucsUserService.selectByUsername(shiroUser.loginName);
+        //把principals放session中 key=userId value=principals
+        SecurityUtils.getSubject().getSession().setAttribute(String.valueOf(ucsUser.getId()),SecurityUtils.getSubject().getPrincipals());
+        SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+        //赋予角色
+        List<UcsRole> ucsRoles = ucsRoleService.selectByUser(ucsUser.getId());
+        if (!CheckEmptyUtil.isEmpty(ucsRoles)){
+            for(UcsRole ucsRole:ucsRoles){
+                info.addRole(ucsRole.getId());
+            }
+        }
+        //赋予权限//        List<UcsPermission> ucsPermissions = ucsPermissionService.selectByUser(ucsUser.getId(), domain);
+        if (!CheckEmptyUtil.isEmpty(shiroUser.getMenus())){
+            for(EasyUIMenu permission:shiroUser.getMenus()){
+                if(UcsBaseConstant.PermissionType.BUTTON.equals(permission.getType()))
+                info.addStringPermission(permission.getUrl());
+            }
+        }
+        return info;
+    }
+
+    /**
+     * Authenticates a user and retrieves its information.
+     * 
+     * @param token the authentication token
+     * @throws AuthenticationException if there is an error during authentication.
+     */
+    @Override
+    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
+        CasToken casToken = (CasToken) token;
+        if (token == null) {
+            return null;
+        }
+
+        String ticket = (String)casToken.getCredentials();
+        if (!StringUtils.hasText(ticket)) {
+            return null;
+        }
+
+        TicketValidator ticketValidator = ensureTicketValidator();
+
+        try {
+            // contact CAS server to validate service ticket
+            Assertion casAssertion = ticketValidator.validate(ticket, getCasService());
+            // get principal, user id and attributes
+            AttributePrincipal casPrincipal = casAssertion.getPrincipal();
+            String username = casPrincipal.getName();
+            logger.debug("Validate ticket : {} in CAS server : {} to retrieve user : {}", new Object[]{
+                    ticket, getCasServerUrlPrefix(), username
+            });
+
+            Map<String, Object> attributes = casPrincipal.getAttributes();
+            // refresh authentication token (user id + remember me)
+            casToken.setUserId(username);
+            String rememberMeAttributeName = getRememberMeAttributeName();
+            String rememberMeStringValue = (String)attributes.get(rememberMeAttributeName);
+            boolean isRemembered = rememberMeStringValue != null && Boolean.parseBoolean(rememberMeStringValue);
+            if (isRemembered) {
+                casToken.setRememberMe(true);
+            }
+            // create simple authentication info
+            // 根据用户名获取账号信息
+            UcsUser ucsUser = ucsUserService.selectByUsername(username);
+            List<UcsPermission> ucsPermissions = null;
+            if (ucsUser != null) {
+                ucsPermissions = ucsPermissionService.selectByUser(ucsUser.getId(), domain);
+            } else {
+                throw new UnknownAccountException();//登录失败
+            }
+            //给菜单排序
+            List<EasyUIMenu> menus = toEasyUIMenu(ucsPermissions);
+            if(!CheckEmptyUtil.isEmpty(menus)){
+                Collections.sort(menus);
+            }
+            ShiroUser shiroUser = new ShiroUser(ucsUser.getId(), ucsUser.getUsername(), ucsUser.getName(), menus);
+
+            return new SimpleAuthenticationInfo(shiroUser, ticket, getName());
+        } catch (TicketValidationException e) { 
+            throw new CasAuthenticationException("Unable to validate ticket [" + ticket + "]", e);
+        }
+    }
+
+    private List<EasyUIMenu> toEasyUIMenu(List<UcsPermission> ucsPermissions){
+        List<EasyUIMenu> menus = new ArrayList<EasyUIMenu>(0);
+        for (UcsPermission ucsPermission : ucsPermissions) {
+            menus.add(toEasyUIMenu(ucsPermission));
+        }
+        return menus;
+    }
+    private EasyUIMenu toEasyUIMenu(UcsPermission ucsPermission){
+        return new EasyUIMenu(ucsPermission.getId(), ucsPermission.getPid(), ucsPermission.getDomain(), ucsPermission.getName(), ucsPermission.getType(), ucsPermission.getSort(), ucsPermission.getIcon(), ucsPermission.getUrl(), ucsPermission.getDescription(), ucsPermission.getStatus());
+    }
+
+    @Override
+    public void clearCachedAuthorizationInfo(PrincipalCollection principals) {
+        super.clearCachedAuthorizationInfo(principals);
+    }
+
+    @Override
+    public void clearCachedAuthenticationInfo(PrincipalCollection principals) {
+        super.clearCachedAuthenticationInfo(principals);
+    }
+
+    @Override
+    public void clearCache(PrincipalCollection principals) {
+        super.clearCache(principals);
+        clearAllCache();
+    }
+
+    public void clearAllCachedAuthorizationInfo() {
+        getAuthorizationCache().clear();
+    }
+
+    public void clearAllCachedAuthenticationInfo() {
+        getAuthenticationCache().clear();
+    }
+
+    public void clearAllCache() {
+        clearAllCachedAuthenticationInfo();
+        clearAllCachedAuthorizationInfo();
+    }
+
+}
+）cas登出
+　　 
+　　在任意一个子系统登出后，cas服务器会向所有发过登录请求的子系统发送一个登出请求，使所有子系统的HttpSession失效。如果使用了shiro的session管理器，需要修改cas客户端代码，在移除HttpSession的时候也移除shiro的Session。
+1、web.xml
+　　web.xml中需要加入cas的SingleSignOutFilter实现单点登出功能，该过滤器需要放在shiroFilter之前，spring字符集过滤器之后。在实际使用时发现，SingleSignOutFilter如果放在了spring字符集过滤器之前，数据在传输过程中就会出现乱码。
+<!-- 用于单点退出，该过滤器用于实现单点登出功能，可选配置。--><listener>
+    <listener-class>org.jasig.cas.client.session.SingleSignOutHttpSessionListener</listener-class></listener><!-- 该过滤器用于实现单点登出功能，可选配置。 --><filter>
+    <filter-name>CAS Single Sign Out Filter</filter-name>
+    <filter-class>org.jasig.cas.client.session.SingleSignOutFilter</filter-class></filter><filter-mapping>
+    <filter-name>CAS Single Sign Out Filter</filter-name>
+    <url-pattern>/*</url-pattern></filter-mapping>
+2、登出请求
+　　登出只需要将当前页面跳转到cas服务器的logout页面即可实现登出。如果需要登出后跳转页面，可以加入service参数，并参考第一部分中第四节进行配置。 
+　　子系统使用的方法是在后台拼装好登出链接，发送给前台页面，前台页面接受使用el表达式接收。具体实现需要根据每个子系统的不同来自行实现。
+@Value("${cas.server}")private String cas_server;  @Value("${cas.client}")private String cas_client;
+@RequestMapping(value = "/index")public String index(Model model){
+    StringBuilder logoutUrl = new StringBuilder();
+    logoutUrl.append(cas_server);
+    logoutUrl.append("/logout?service=");
+    logoutUrl.append(cas_client);
+    model.addAttribute("logoutUrl", logoutUrl.toString());
+    return "system/index";
+}
+　　前台页面：
+<script>
+    var logoutUrl = '${logoutUrl}';</script>
+缓存配置（可选）
+我使用的ehcache作为shiro的缓存，也可以使用其他的。 
+spring-cache.xml
+<?xml version="1.0" encoding="UTF-8"?><beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop" xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:jdbc="http://www.springframework.org/schema/jdbc" xmlns:tx="http://www.springframework.org/schema/tx"
+    xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+    http://www.springframework.org/schema/jdbc http://www.springframework.org/schema/jdbc/spring-jdbc.xsd
+    http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd"
+    default-lazy-init="false">
+
+    <bean id="springCacheManager" class="org.springframework.cache.ehcache.EhCacheCacheManager">
+        <property name="cacheManager" ref="ehcacheManager"/>
+    </bean>
+
+    <!--ehcache-->
+    <bean id="ehcacheManager" class="org.springframework.cache.ehcache.EhCacheManagerFactoryBean">
+        <property name="configLocation" value="classpath:properties/ehcache.xml"/>
+    </bean>
+</beans>
+ehcache.xml
+<?xml version="1.0" encoding="UTF-8"?>  <ehcache xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"  
+    xsi:noNamespaceSchemaLocation="ehcache.xsd"  
+    updateCheck="true" monitoring="autodetect"  
+    dynamicConfig="true">  
+
+
+    <diskStore path="C:\\ehcache\\cache"/> 
+    <!--<diskStore path="/application/cache"/>   -->
+    <!-- 登录记录缓存 锁定10分钟 -->
+    <cache name="passwordRetryEhcache"
+        maxEntriesLocalHeap="2000"
+        eternal="false"
+        timeToIdleSeconds="1800"
+        timeToLiveSeconds="0"
+        overflowToDisk="false"
+        statistics="true">
+    </cache>
+
+    <cache name="authorizationCache"
+        maxEntriesLocalHeap="2000"
+        eternal="false"
+        timeToIdleSeconds="3600"
+        timeToLiveSeconds="0"
+        overflowToDisk="false"
+        statistics="true">
+    </cache>
+
+    <cache name="authenticationCache"
+        maxEntriesLocalHeap="2000"
+        eternal="false"
+        timeToIdleSeconds="3600"
+        timeToLiveSeconds="0"
+        overflowToDisk="false"
+        statistics="true">
+    </cache>
+
+    <cache name="shiro-activeSessionCache"
+        maxEntriesLocalHeap="2000"
+        eternal="false"
+        timeToIdleSeconds="3600"
+        timeToLiveSeconds="0"
+        overflowToDisk="false"
+        statistics="true">
+    </cache>
+
+    <defaultCache  
+        maxElementsInMemory="1000"  
+        eternal="false"  
+        timeToIdleSeconds="120"  
+        timeToLiveSeconds="120"  
+        overflowToDisk="true"  
+        maxElementsOnDisk="10000"  
+        diskSpoolBufferSizeMB="30"  
+        diskPersistent="false"  
+        diskExpiryThreadIntervalSeconds="120"  
+        memoryStoreEvictionPolicy="LRU"  
+        statistics="false"  
+        />  
+
+</ehcache> 
+第四部分：spring security使用cas单点登录配置
+　　spring security本身就提供了对cas的支持，只需要简单的配置就可以实现单点登录。 
+　　由于客户端项目没有使用spring security自带的权限管理，采用了自定义的实现，配置起来比正常的spring security要复杂一些。
+（一）spring security域cas集成配置
+1、增加cas依赖
+　　需要为客户端项目增加spring-security-cas的依赖，它会自动把cas-client-core.jar的依赖加入到项目中。
+<!-- cas --><dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-cas</artifactId>
+    <version>3.1.0.RELEASE</version></dependency>
+2、增加applicationContext-cas.xml
+　　加入了securityFilter来处理权限，额外注入了一个基础数据库操作类resourcesDao。在需要使用数据库的地方可以根据项目情况来进行注入。注入只需要为属性增加set方法即可。
+<?xml version="1.0" encoding="UTF-8"?><beans:beans xmlns="http://www.springframework.org/schema/security" xmlns:context="http://www.springframework.org/schema/context" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:p="http://www.springframework.org/schema/p" xmlns:beans="http://www.springframework.org/schema/beans"
+    xsi:schemaLocation="http://www.springframework.org/schema/context  http://www.springframework.org/schema/context/spring-context.xsd  
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd    
+           http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd"
+    default-lazy-init="true">
+
+    <!-- 不要过滤图片等静态资源 -->
+    <http pattern="/**/*.jpg" security="none" />
+    <http pattern="/**/*.png" security="none" />
+    <http pattern="/**/*.gif" security="none" />
+    <http pattern="/**/*.css" security="none" />
+    <http pattern="/**/*.js" security="none" />
+
+    <!--SSO -->
+    <http entry-point-ref="casEntryPoint" auto-config="true">
+        <intercept-url pattern="/" access="IS_AUTHENTICATED_ANONYMOUSLY" />
+
+        <custom-filter ref="casFilter" after="CAS_FILTER"/>
+        <!-- 登出过滤器 -->
+        <custom-filter ref="requestSingleLogoutFilter" before="LOGOUT_FILTER" />
+        <custom-filter ref="singleLogoutFilter" before="CAS_FILTER" />
+        <!-- 权限过滤器 -->
+        <custom-filter ref="securityFilter" before="FILTER_SECURITY_INTERCEPTOR" />
+    </http>
+
+    <beans:bean id="casEntryPoint" class="org.springframework.security.cas.web.CasAuthenticationEntryPoint">
+        <beans:property name="loginUrl" value="${cas.server}/login" />
+        <beans:property name="serviceProperties" ref="serviceProperties" />
+    </beans:bean>
+    <beans:bean id="serviceProperties" class="org.springframework.security.cas.ServiceProperties">
+        <beans:property name="service" value="${cas.client}/j_spring_cas_security_check" />
+        <beans:property name="sendRenew" value="false" />
+    </beans:bean>
+
+    <beans:bean id="casFilter" class="org.springframework.security.cas.web.CasAuthenticationFilter">
+        <beans:property name="authenticationManager" ref="authenticationManager" />
+        <beans:property name="authenticationFailureHandler">
+            <beans:bean class="org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler">
+                <!-- cas登录失败跳转页面，跳转首页 -->
+                <beans:property name="defaultFailureUrl" value="${cas.client}"/>
+            </beans:bean>
+        </beans:property>
+        <!-- 登录成功处理，将用户信息存入session -->
+        <beans:property name="authenticationSuccessHandler">
+            <beans:bean class="com.whty.bwjf.framework.core.cas.CasAuthenticationSuccessHandler">
+                <!-- cas登录成功后跳转页面 -->
+                <beans:property name="defaultTargetUrl" value="/admin.jsp"/>
+                <beans:property name="usersDao" ref="resourcesDao"></beans:property>
+                <beans:property name="resDao" ref="resourcesDao"></beans:property>
+            </beans:bean>
+        </beans:property>
+    </beans:bean>
+
+    <authentication-manager alias="authenticationManager">
+        <authentication-provider ref="casAuthenticationProvider" />
+    </authentication-manager>
+
+    <beans:bean id="casAuthenticationProvider" class="org.springframework.security.cas.authentication.CasAuthenticationProvider">
+        <!-- 注入获取tsp用户的service -->
+        <beans:property name="userDetailsService" ref="tspUserDetailServiceImpl" />
+        <beans:property name="serviceProperties" ref="serviceProperties" />
+        <beans:property name="ticketValidator">
+            <beans:bean class="org.jasig.cas.client.validation.Cas20ServiceTicketValidator">
+                <beans:constructor-arg index="0" value="${cas.server}" />
+            </beans:bean>
+        </beans:property>
+        <beans:property name="key" value="an_id_for_this_auth_provider_only" />
+    </beans:bean>
+
+    <!-- 注销客户端 -->
+    <beans:bean id="singleLogoutFilter" class="org.jasig.cas.client.session.SingleSignOutFilter" />
+
+    <!-- 注销服务器端 -->
+    <beans:bean id="requestSingleLogoutFilter" class="org.springframework.security.web.authentication.logout.LogoutFilter">
+        <beans:constructor-arg value="${cas.server}/logout" />
+        <beans:constructor-arg>
+            <beans:bean class="org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler" />
+        </beans:constructor-arg>
+        <beans:property name="filterProcessesUrl" value="/j_spring_cas_security_logout" />
+    </beans:bean>
+
+    <!-- 认证过滤器 -->
+    <beans:bean id="securityFilter"
+        class="com.whty.bwjf.tsp.core.security.TspSecurityFilter">
+        <!-- 用户拥有的权限 -->
+        <beans:property name="authenticationManager" ref="authenticationManager" />
+        <!-- 用户是否拥有所请求资源的权限 -->
+        <beans:property name="accessDecisionManager" ref="tspAccessDecisionManager" />
+        <!-- 资源与权限对应关系 -->
+        <beans:property name="securityMetadataSource" ref="tspSecurityMetadataSource" />
+    </beans:bean>
+
+    <!-- 判断是否有访问权限 -->
+    <beans:bean id="tspAccessDecisionManager"
+        class="com.whty.bwjf.tsp.core.security.TspAccessDecisionManager"></beans:bean>
+    <!-- 从数据库提取权限和资源，装配到HashMap中，供Spring Security使用，用于权限校验 -->
+    <beans:bean id="tspSecurityMetadataSource"
+        class="com.whty.bwjf.tsp.core.security.TspSecurityMetadataSource">
+        <!-- 菜单表DAO -->
+        <beans:constructor-arg name="resourcesDao" ref="resourcesDao"></beans:constructor-arg>
+    </beans:bean>
+
+    <!-- 基础数据库操作类 -->
+    <beans:bean id="resourcesDao"
+        class="com.whty.bwjf.framework.core.dao.imp.BaseDao">
+        <beans:property name="sessionFactory" ref="sessionFactory"></beans:property>
+    </beans:bean>
+
+    <!-- 为Spring Security提供一个经过用户认证后的UserDetails -->
+    <beans:bean id="tspUserDetailServiceImpl"
+        class="com.whty.bwjf.tsp.core.security.TspUserDetailServiceImpl">
+        <!-- 用户表DAO -->
+        <beans:property name="usersDao" ref="resourcesDao"></beans:property>
+        <!-- 菜单表DAO -->
+        <beans:property name="resDao" ref="resourcesDao"></beans:property>
+    </beans:bean></beans:beans> 
+2、cas属性文件
+cas.server=http://192.168.5.129:8080/cas
+cas.client=http://192.168.4.184:8091/ucs
+1
+3、userDetailsService
+　　CasAuthenticationProvider中需要自行配置一个继承UserDetailsService接口的实现类，来保存用户信息和权限信息。
+/** 
+ *该类的主要作用是为Spring Security提供一个经过用户认证后的UserDetails。
+ *该UserDetails包括用户名、密码、是否可用、是否过期等信息。
+ */@SuppressWarnings("deprecation")public class TspUserDetailServiceImpl implements UserDetailsService {
+    @Resource
+    private IBaseDao<SysUser> usersDao;
+    @Resource
+    private IBaseDao<SysResource> resDao;
+
+    public void setUsersDao(IBaseDao<SysUser> usersDao) {
+        this.usersDao = usersDao;
+    }
+    public void setResDao(IBaseDao<SysResource> resDao) {
+        this.resDao = resDao;
+    }
+
+    /**
+     * 登入默认会调到这里
+     */
+    @Transactional
+    @Override
+    public UserDetails loadUserByUsername(String username)
+            throws UsernameNotFoundException {
+        //获取用户信息
+        String hql = "from SysUser t where t.account = :username";
+        Map<String, Object> params = new HashMap<String, Object>();
+        params.put("username", username);
+        List<SysUser> userList = null;
+        try {
+            userList = this.usersDao.find(hql,params);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        SysUser users = null;
+        if(userList == null || userList.size() < 1){
+            users = null;
+        }else{
+            users = userList.get(0);
+        }
+
+        //取得用户的权限
+        Collection<GrantedAuthority> grantedAuths = obtionGrantedAuthorities(users);
+        boolean enables = true;
+        boolean accountNonExpired = true;
+        boolean credentialsNonExpired = true;
+        boolean accountNonLocked = true;
+        //封装成spring security的user
+        User userdetail = new User(users.getAccount(), users.getPassword(), enables, accountNonExpired, credentialsNonExpired, accountNonLocked, grantedAuths);
+        return userdetail;
+    }
+
+    //取得用户的权限
+    private Set<GrantedAuthority> obtionGrantedAuthorities(SysUser user) {
+        Set<GrantedAuthority> authSet = new HashSet<GrantedAuthority>();  
+        //获取用户所属组  
+        Set<SysRole> sysRoles = user.getSysRoles();  
+        for(SysRole sysRole : sysRoles ){    
+            //获取用户组对应 角色集合  
+            Set<SysResource> sysResources = sysRole.getSysResources();
+
+            for(SysResource sysResource : sysResources){
+                authSet.add(  
+                        new GrantedAuthorityImpl(sysResource.getText()));
+            }
+        }
+        return authSet;
+    }
+}
+4、登出配置
+　　web.xml新增单点登出过滤器。 
+　　web.xml中需要加入cas的SingleSignOutFilter实现单点登出功能，该过滤器需要放在shiroFilter之前，spring字符集过滤器之后。在实际使用时发现，SingleSignOutFilter如果放在了spring字符集过滤器之前，数据在传输过程中就会出现乱码。
+<!-- 用于单点退出，该过滤器用于实现单点登出功能--><listener>
+    <listener-class>org.jasig.cas.client.session.SingleSignOutHttpSessionListener</listener-class></listener>
+<!-- 该过滤器用于实现单点登出功能。 --><filter>
+    <filter-name>CAS Single Sign Out Filter</filter-name>
+    <filter-class>org.jasig.cas.client.session.SingleSignOutFilter</filter-class></filter><filter-mapping>
+    <filter-name>CAS Single Sign Out Filter</filter-name>
+    <url-pattern>/*</url-pattern></filter-mapping>
+（二）自定义权限与cas集成配置
+　　如果使用spring security自带的验证框架，只需要前面三步，并且去掉自定义过滤器和相关bean就可以实现cas单点登录了。
+1、登录成功后将用户信息放入Session
+　　其实spring security已经将UserDetails对象保存在了Session中，但是公司的项目并没有使用Session中的UserDetails，而是自己使用了自己保存的session对象，因此需要将用户信息在登陆时保存到Session中。
+/**
+ * 登录成功处理Handler，保存用户信息到session中
+ */public class CasAuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler{
+
+    final Logger logger = LoggerFactory.getLogger(getClass()); 
+
+    @Resource
+    private IBaseDao<SysUser> usersDao;
+
+    @Resource
+    private IBaseDao<SysResource> resDao;
+
+    public void setUsersDao(IBaseDao<SysUser> usersDao) {
+        this.usersDao = usersDao;
+    }
+
+    public void setResDao(IBaseDao<SysResource> resDao) {
+        this.resDao = resDao;
+    }
+
+    @Override
+    public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException,
+            ServletException {
+        logger.info("cas验证成功");
+        String username = ((UserDetails) authentication.getPrincipal()).getUsername();
+        SysUser user = getUser(username);
+        request.getSession().setAttribute(Constans.SESSION_USER, user);
+        if (user != null) {
+            request.getSession().setAttribute(Constans.SESSION_AUTH, loadAut(user.getId()));
+        }
+
+        super.onAuthenticationSuccess(request, response, authentication);
+    }
+    //获取用户信息
+    private SysUser getUser(String username){
+        String hql = "from SysUser t where t.account = :username";
+        Map<String, Object> params = new HashMap<String, Object>();
+        params.put("username", username);
+        List<SysUser> userList = null;
+        try {
+            userList = this.usersDao.find(hql,params);
+        } catch (Exception e) {
+            logger.error("读取菜单失败");
+            logger.error(e.getMessage());
+        }
+        if(userList == null || userList.size() < 1){
+            return null;
+        }else{
+            return userList.get(0);
+
+        }
+    }
+
+    //获取权限信息
+    private Set<String> loadAut(String uid) {
+        Set<String> set = new HashSet<String>();
+        List<SysResource> resources = new ArrayList<SysResource>();
+        Map<String, Object> params = new HashMap<String, Object>();
+        String hql = "select res from SysResource res  join res.sysRoles r join r.sysUsers u where 1 = 1 and u.id = :userId order by res.seq asc ";
+        params.put("userId", uid);
+
+        try {
+            resources = resDao.find(hql, params);
+        } catch (Exception e) {
+            logger.error("读取菜单失败");
+            logger.error(e.getMessage());
+        }
+        if (resources != null && resources.size() > 0) {
+            for(SysResource resource : resources){
+                set.add(resource.getUrl());
+            }
+        }
+        return set;
+    }
+}
+2、accessDecisionManager和securityMetadataSource
+　　自定义具体如何实现可以参考spring security相关文章，本系统在实现cas集成时没有修改原系统的这两个实现类，现在仅放出来提供参考。
+/**
+ *AccessdecisionManager在Spring security中是很重要的。
+ *
+ *在验证部分简略提过了，所有的Authentication实现需要保存在一个GrantedAuthority对象数组中。 
+ *这就是赋予给主体的权限。 GrantedAuthority对象通过AuthenticationManager
+ *保存到 Authentication对象里，然后从AccessDecisionManager读出来，进行授权判断。 
+ *
+ *Spring Security提供了一些拦截器，来控制对安全对象的访问权限，例如方法调用或web请求。 
+ *一个是否允许执行调用的预调用决定，是由AccessDecisionManager实现的。 
+ *这个 AccessDecisionManager 被AbstractSecurityInterceptor调用，
+ *它用来作最终访问控制的决定。 这个AccessDecisionManager接口包含三个方法： 
+ *
+ void decide(Authentication authentication, Object secureObject,
+    List<ConfigAttributeDefinition> config) throws AccessDeniedException;
+ boolean supports(ConfigAttribute attribute);
+ boolean supports(Class clazz);
+
+  从第一个方法可以看出来，AccessDecisionManager使用方法参数传递所有信息，这好像在认证评估时进行决定。 
+  特别是，在真实的安全方法期望调用的时候，传递安全Object启用那些参数。 
+  比如，让我们假设安全对象是一个MethodInvocation。 
+  很容易为任何Customer参数查询MethodInvocation，
+  然后在AccessDecisionManager里实现一些有序的安全逻辑，来确认主体是否允许在那个客户上操作。 
+  如果访问被拒绝，实现将抛出一个AccessDeniedException异常。
+
+  这个 supports(ConfigAttribute) 方法在启动的时候被
+  AbstractSecurityInterceptor调用，来决定AccessDecisionManager
+  是否可以执行传递ConfigAttribute。 
+  supports(Class)方法被安全拦截器实现调用，
+  包含安全拦截器将显示的AccessDecisionManager支持安全对象的类型。
+ */
+public class TspAccessDecisionManager implements AccessDecisionManager {
+
+    @Override
+    public void decide(Authentication authentication, Object object,
+            Collection<ConfigAttribute> configAttributes)
+            throws AccessDeniedException, InsufficientAuthenticationException {
+        if(configAttributes == null) {
+            return;
+        }
+        //所请求的资源拥有的权限(一个资源对多个权限)
+        Iterator<ConfigAttribute> iterator = configAttributes.iterator();
+        while(iterator.hasNext()) {
+            ConfigAttribute configAttribute = iterator.next();
+            //访问所请求资源所需要的权限
+            String needPermission = configAttribute.getAttribute();
+            System.out.println("needPermission is " + needPermission);
+            //用户所拥有的权限authentication
+            for(GrantedAuthority ga : authentication.getAuthorities()) {
+                if(needPermission.equals(ga.getAuthority())) {
+                    return;
+                }
+            }
+        }
+        //没有权限让我们去捕捉
+        throw new AccessDeniedException(" 没有权限访问！");
+    }
+
+    @Override
+    public boolean supports(ConfigAttribute attribute) {
+        // TODO Auto-generated method stub
+        return true;
+    }
+
+    @Override
+    public boolean supports(Class<?> clazz) {
+        // TODO Auto-generated method stub
+        return true;
+    }
+
+}
+/**
+ * 加载资源与权限的对应关系 该过滤器的主要作用就是通过spring著名的IoC生成securityMetadataSource。
+ * securityMetadataSource相当于本包中自定义的MyInvocationSecurityMetadataSourceService。
+ * 该MyInvocationSecurityMetadataSourceService的作用是从数据库提取权限和资源，装配到HashMap中，
+ * 供Spring Security使用，用于权限校验。
+ * 
+ * @author sparta 11/3/29
+ */
+public class TspSecurityMetadataSource implements FilterInvocationSecurityMetadataSource {
+
+    private IBaseDao<SysResource> resourcesDao;
+
+    // 由spring调用
+    public TspSecurityMetadataSource(IBaseDao<SysResource> resourcesDao) throws Exception {
+        this.resourcesDao = resourcesDao;
+        loadResourceDefine();
+    }
+
+    private static Map<String, Collection<ConfigAttribute>> resourceMap = null;
+    private RequestMatcher pathMatcher;
+
+    // 返回所请求资源所需要的权限
+    @Override
+    public Collection<ConfigAttribute> getAttributes(Object object) throws IllegalArgumentException {
+
+        Iterator<String> it = resourceMap.keySet().iterator();
+        while (it.hasNext()) {
+            String resURL = it.next();
+            Iterator<String> ite = resourceMap.keySet().iterator();
+            if (resURL != null && !"".equals(resURL)) {
+                pathMatcher = new AntPathRequestMatcher(resURL);
+            } else {
+                pathMatcher = new AntPathRequestMatcher("/other.do");
+            }
+            if (pathMatcher.matches(((FilterInvocation) object).getRequest())) {
+                Collection<ConfigAttribute> returnCollection = resourceMap.get(resURL);
+                return returnCollection;
+            }
+        }
+        return null;
+    }
+
+    // 加载所有资源与权限的关系
+    @Transactional
+    private void loadResourceDefine() throws Exception {
+        if (resourceMap == null) {
+            resourceMap = new HashMap<String, Collection<ConfigAttribute>>();
+
+            // Session session = this.resourcesDao.get
+            BaseDao<SysResource> dao = (BaseDao) resourcesDao;
+            Session session = dao.getSessionFactory().openSession();
+
+            Query query = session.createQuery("from SysResource");
+            List<SysResource> resources = query.list();
+            // List<SysResource> resources =
+            // this.resourcesDao.findAll(SysResource.class);
+            for (SysResource resource : resources) {
+                Collection<ConfigAttribute> configAttributes = new ArrayList<ConfigAttribute>();
+                // 以权限名封装为Spring的security Object
+                // resource.getRoleName() 角色名称 可随意 role_admin 或者 admin
+                ConfigAttribute configAttribute = new SecurityConfig(resource.getText());
+                configAttributes.add(configAttribute);
+                // resource.getInterceptUrl() 格式必须是 拦截的包路径
+                // 或者是 比如 /manager/**/*.jh 或者 /system/manager/**/*.jsp
+                resourceMap.put(resource.getUrl(), configAttributes);
+            }
+        }
+
+        Set<Entry<String, Collection<ConfigAttribute>>> resourceSet = resourceMap.entrySet();
+        Iterator<Entry<String, Collection<ConfigAttribute>>> iterator = resourceSet.iterator();
+
+    }
+
+    @Override
+    public Collection<ConfigAttribute> getAllConfigAttributes() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public boolean supports(Class<?> clazz) {
+        // TODO Auto-generated method stub
+        return true;
+    }
+}
+3、session失效处理
+　　公司项目使用了自定义权限处理，在session失效后casEntryPoint的 access-denied-page没有生效，因此自定义了一个session过滤器来处理session失效的问题。 
+　　这个过滤器应该放在单点登录过滤器之前，CharacterEncodingFilter之后。
+<!-- session过滤器，检查是否有session --><filter>
+    <filter-name>onlineFilter</filter-name>
+    <filter-class>com.whty.bwjf.framework.core.util.OnlineFilter</filter-class></filter><filter-mapping>
+    <filter-name>onlineFilter</filter-name>
+    <url-pattern>*.do</url-pattern></filter-mapping><filter-mapping>
+    <filter-name>onlineFilter</filter-name>
+    <url-pattern>*.htm</url-pattern></filter-mapping><filter-mapping>
+    <filter-name>onlineFilter</filter-name>
+    <url-pattern>*.jsp</url-pattern></filter-mapping>
+1
+/**
+ * 登陆验证过滤
+ */public class OnlineFilter extends HttpServlet implements Filter { 
+    private static final long serialVersionUID = 1L;
+    private String redirect_url;
+
+    public void doFilter(ServletRequest request, ServletResponse response,   FilterChain chain) throws IOException, ServletException {
+        // 这里设置如果没有登陆将要转发到的页面  
+        HttpServletRequest req = (HttpServletRequest) request; 
+        HttpServletResponse res = (HttpServletResponse) response; 
+        HttpSession session = req.getSession(true);  
+
+        String requestUri = req.getRequestURI();
+        String contextPath = req.getContextPath();
+        String url = requestUri.substring(contextPath.length());
+        // 从session里取的用户名信息  
+        SysUser user = (SysUser) session.getAttribute(Constans.SESSION_USER);
+        // 这里获取session，为了检查session里有没有保存用户信息，没有的话回转发到登陆页面
+        // 判断如果没有取到用户信息,就跳转到登陆页面  
+        if(user == null && StringUtils.isEmpty(req.getParameter("ticket"))) {
+            // 跳转到登陆页面   
+            if(isAjaxRequest(req)){
+                try {
+                    response.getWriter().print("login");
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                res.sendRedirect(redirect_url);
+            }
+
+        } else {
+            chain.doFilter(request, response);   
+        } 
+    } 
+     private boolean isAjaxRequest(HttpServletRequest request) {  
+        String header = request.getHeader("X-Requested-With");  
+        if (header != null && "XMLHttpRequest".equals(header))  
+            return true;  
+        else  
+            return false;  
+    }
+    public void init(FilterConfig filterConfig) throws ServletException {
+        StringBuilder url = new StringBuilder();
+        url.append(SysConfig.getConfiguration().getProperty(Constans.SYSCONFIG_CAS_SERVER));
+        url.append("/login?service=");
+        url.append(SysConfig.getConfiguration().getProperty(Constans.SYSCONFIG_CAS_CLIENT));
+        url.append("/j_spring_cas_security_check");
+        redirect_url = url.toString();
+    }
+}

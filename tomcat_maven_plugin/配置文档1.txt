@@ -1,0 +1,103 @@
+﻿ 
+
+
+本地插件运行项目
+
+ ·tomcat7：run
+
+
+
+使用tomcat7-maven-plugin部署Web项目
+标签： tomcatjavaweb
+2016-11-07 10:45 4442人阅读 评论(0) 收藏 举报
+ 分类：
+JavaWeb（1） 
+版权声明：本文为博主原创文章，未经博主允许不得转载。
+一、环境准备 
+我使用的环境是：Window 10、Tomcat 8.0.36、maven3、tomcat7-maven-plugin 2.2版本。 
+二、设置环境变量 
+安装Tomcat8.0.36和maven之后设置环境变量，Tomcat设置环境变量时，key为必须为CATALINA_HOME。 
+1.设置maven环境变量 
+MAVEN =D:\Program Files (x86)\JetBrains\IntelliJ IDEA 2016.1.3\plugins\maven\lib\maven3\bin 
+(我直接引用了InteljiIDEA中的maven) 
+2、设置TOMACAT环境变量 
+CATALINA_HOME=E:\tomcat\apache-tomcat-8.0.36 
+3、将他们添加到PATH中 
+PATH=%MAVEN%;%CATALINA_HOME%\bin;
+三、在Tomcat中配置用户权限 
+在tomcat的配置文件tomcat_user.xml（%CATALINA_HOME%\conf\tomcat.user.xml）中的< tomcat-users >标签中添加
+<role rolename="manager-gui"/><role rolename="manager-script"/><user username="username" password="password" roles="manager-gui,manager-script"/>
+
+四、在Maven的settings.xml配置Server 
+在Maven的配置文件settings.xml(%MAVEN%\conf\settings.xml)中的< servers > 中加入
+<server>
+        <id>tomcat8</id>
+        <username>username</username>
+        <password>password</password>
+    </server>
+
+这里的username 、password就填我们在tomcat中配置的那个用户名，和密码 
+这里的设置的 id为 tomcat8 我们将在项目的 pom.xml中填写。
+五、在项目的pom.xml中配置tomcat7-maven-plugin插件 
+在< build> 中引入插件：
+ <build>
+        <pluginManagement>
+            <plugins>
+              ...
+                <!-- 配置tomcat 插件 -->
+                    <groupId>org.apache.tomcat.maven</groupId>
+                    <artifactId>tomcat7-maven-plugin</artifactId>
+                    <version>2.2</version>
+                    <configuration>
+                        <url>http://localhost:8080/manager/text</url>
+                        <server>tomcat8</server>
+                        <path>/test</path>
+                        <update>true</update>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        ....
+
+注意 
+1、这里的 < server> 中填写的就是为们在%MAVEN%\conf\settings.xml配置中的那个id 
+即 tomcat8. 
+2、由于我用的tomcat8这里的< url> 必须配置成 xxx/manager/text否则会部署不成功
+3、由于部署时会下载一些东西最还是在 pom.xml 的< project >标签下加入以下代码：
+<repositories>
+        <repository>
+            <id>people.apache.snapshots</id>
+            <url>
+                http://repository.apache.org/content/groups/snapshots-group/
+            </url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>apache.snapshots</id>
+            <name>Apache Snapshots</name>
+            <url>http://repository.apache.org/content/groups/snapshots-group/</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
+六、deploy 
+1、开启tomcat 
+2、在pom.xml所在的目录执行 mvn tomcat7:deploy 命令部署项目。
+七、遇到的问题 
+1、在Window系统下执行在执行 mvn tomcat7:undeploy时，会有残留在tomcat目录下 
+解决方法：在tomcat的配置文件context.xml中 的< Context >标签中添加属性：antiJARLocking=”true” antiResourceLocking=”true” 
+即
+<Context antiJARLocking="true" antiResourceLocking="true">
