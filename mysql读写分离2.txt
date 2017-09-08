@@ -1,0 +1,223 @@
+spring aop ， mysql 主从配置 实现读写分离，下来把自己的配置过程，以及遇到的问题记录下来，方便下次操作，也希望给一些朋友带来帮助。
+mysql主从配置参看：http://blog.csdn.net/huoyunshen88/article/details/26597483
+
+1.使用spring aop 拦截机制现数据源的动态选取。
+[html] view plain copy
+import java.lang.annotation.ElementType;  
+import java.lang.annotation.Target;  
+import java.lang.annotation.Retention;  
+import java.lang.annotation.RetentionPolicy;  
+/**  
+ * RUNTIME  
+ * 编译器将把注释记录在类文件中，在运行时 VM 将保留注释，因此可以反射性地读取。  
+ * @author yangGuang  
+ *  
+ */  
+@Retention(RetentionPolicy.RUNTIME)  
+@Target(ElementType.METHOD)  
+public @interface DataSource {  
+    String value();  
+}  
+
+ 
+ 3.利用Spring的AbstractRoutingDataSource解决多数据源的问题 参考： http://blog.csdn.net/alaahong/article/details/8707915
+[html] view plain copy
+import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;  
+  
+ public class ChooseDataSource extends AbstractRoutingDataSource {  
+  
+     @Override  
+     protected Object determineCurrentLookupKey() {  
+         return HandleDataSource.getDataSource();  
+     }  
+       
+ }  
+
+
+    4.利用ThreadLocal解决线程安全问题
+[html] view plain copy
+public class HandleDataSource {  
+    public static final ThreadLocal<String> holder = new ThreadLocal<String>();  
+    public static void putDataSource(String datasource) {  
+        holder.set(datasource);  
+    }  
+      
+    public static String getDataSource() {  
+        return holder.get();  
+    }      
+}  
+
+    5.定义一个数据源切面类，通过aop访问，在spring配置文件中配置了，所以没有使用aop注解。
+[html] view plain copy
+import java.lang.reflect.Method;  
+import org.aspectj.lang.JoinPoint;  
+import org.aspectj.lang.annotation.Aspect;  
+import org.aspectj.lang.annotation.Before;  
+import org.aspectj.lang.annotation.Pointcut;  
+import org.aspectj.lang.reflect.MethodSignature;  
+import org.springframework.stereotype.Component;  
+//@Aspect  
+//@Component  
+public class DataSourceAspect {  
+    //@Pointcut("execution(* com.apc.cms.service.*.*(..))")    
+    public void pointCut(){};    
+      
+  //  @Before(value = "pointCut()")  
+     public void before(JoinPoint point)  
+        {  
+            Object target = point.getTarget();  
+            System.out.println(target.toString());  
+            String method = point.getSignature().getName();  
+            System.out.println(method);  
+            Class<?>[] classz = target.getClass().getInterfaces();  
+            Class<?>[] parameterTypes = ((MethodSignature) point.getSignature())  
+                    .getMethod().getParameterTypes();  
+            try {  
+                Method m = classz[0].getMethod(method, parameterTypes);  
+                System.out.println(m.getName());  
+                if (m != null && m.isAnnotationPresent(DataSource.class)) {  
+                    DataSource data = m.getAnnotation(DataSource.class);  
+                    HandleDataSource.putDataSource(data.value());  
+                }  
+                  
+            } catch (Exception e) {  
+                e.printStackTrace();  
+            }  
+        }  
+}  
+    
+    6.配置applicationContext.xml
+[html] view plain copy
+<!-- 主库数据源 -->  
+ <bean id="writeDataSource" class="com.jolbox.bonecp.BoneCPDataSource"  destroy-method="close">  
+    <property name="driverClass" value="com.mysql.jdbc.Driver"/>  
+    <property name="jdbcUrl" value="jdbc:mysql://172.22.14.6:3306/cpp?autoReconnect=true"/>  
+    <property name="username" value="root"/>  
+    <property name="password" value="root"/>  
+    <property name="partitionCount" value="4"/>  
+    <property name="releaseHelperThreads" value="3"/>  
+    <property name="acquireIncrement" value="2"/>  
+    <property name="maxConnectionsPerPartition" value="40"/>  
+    <property name="minConnectionsPerPartition" value="20"/>  
+    <property name="idleMaxAgeInSeconds" value="60"/>  
+    <property name="idleConnectionTestPeriodInSeconds" value="60"/>  
+    <property name="poolAvailabilityThreshold" value="5"/>  
+</bean>  
+  
+<!-- 从库数据源 -->  
+<bean id="readDataSource" class="com.jolbox.bonecp.BoneCPDataSource"  destroy-method="close">  
+    <property name="driverClass" value="com.mysql.jdbc.Driver"/>  
+    <property name="jdbcUrl" value="jdbc:mysql://172.22.14.7:3306/cpp?autoReconnect=true"/>  
+    <property name="username" value="root"/>  
+    <property name="password" value="root"/>  
+    <property name="partitionCount" value="4"/>  
+    <property name="releaseHelperThreads" value="3"/>  
+    <property name="acquireIncrement" value="2"/>  
+    <property name="maxConnectionsPerPartition" value="40"/>  
+    <property name="minConnectionsPerPartition" value="20"/>  
+    <property name="idleMaxAgeInSeconds" value="60"/>  
+    <property name="idleConnectionTestPeriodInSeconds" value="60"/>  
+    <property name="poolAvailabilityThreshold" value="5"/>  
+</bean>  
+  
+<!-- transaction manager, 事务管理 -->  
+<bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">  
+    <property name="dataSource" ref="dataSource" />  
+</bean>  
+  
+  
+<!-- 注解自动载入 -->  
+<context:annotation-config />  
+  
+<!--enale component scanning (beware that this does not enable mapper scanning!)-->  
+<context:component-scan base-package="com.apc.cms.persistence.rdbms" />  
+<context:component-scan base-package="com.apc.cms.service">  
+ <context:include-filter type="annotation"    
+        expression="org.springframework.stereotype.Component" />    
+</context:component-scan>   
+  
+<context:component-scan base-package="com.apc.cms.auth" />  
+  
+<!-- enable transaction demarcation with annotations -->  
+<tx:annotation-driven />  
+  
+  
+<!-- define the SqlSessionFactory -->  
+<bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">  
+    <property name="dataSource" ref="dataSource" />  
+    <property name="typeAliasesPackage" value="com.apc.cms.model.domain" />  
+</bean>  
+  
+<!-- scan for mappers and let them be autowired -->  
+<bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">  
+    <property name="basePackage" value="com.apc.cms.persistence" />  
+    <property name="sqlSessionFactory" ref="sqlSessionFactory" />  
+</bean>  
+  
+<bean id="dataSource" class="com.apc.cms.utils.ChooseDataSource">  
+    <property name="targetDataSources">    
+          <map key-type="java.lang.String">    
+              <!-- write -->  
+             <entry key="write" value-ref="writeDataSource"/>    
+             <!-- read -->  
+             <entry key="read" value-ref="readDataSource"/>    
+          </map>    
+            
+    </property>    
+    <property name="defaultTargetDataSource" ref="writeDataSource"/>    
+</bean>  
+    
+<!-- 激活自动代理功能 -->  
+<aop:aspectj-autoproxy proxy-target-class="true"/>  
+  
+<!-- 配置数据库注解aop -->  
+<bean id="dataSourceAspect" class="com.apc.cms.utils.DataSourceAspect" />  
+<aop:config>  
+    <aop:aspect id="c" ref="dataSourceAspect">  
+        <aop:pointcut id="tx" expression="execution(* com.apc.cms.service..*.*(..))"/>  
+        <aop:before pointcut-ref="tx" method="before"/>  
+    </aop:aspect>  
+</aop:config>  
+<!-- 配置数据库注解aop -->  
+
+
+    
+7.使用注解，动态选择数据源，分别走读库和写库。
+[html] view plain copy
+@DataSource("write")  
+public void update(User user) {  
+    userMapper.update(user);  
+}  
+  
+@DataSource("read")  
+public Document getDocById(long id) {  
+    return documentMapper.getById(id);  
+}  
+
+测试写操作：可以通过应用修改数据，修改主库数据，发现从库的数据被同步更新了，所以定义的write操作都是走的写库
+ 测试读操作：  后台修改从库数据，查看主库的数据没有被修改，在应用页面中刷新，发现读的是从库的数据，说明读写分离ok。
+ 
+遇到的问题总结：
+
+  问题1：项目是maven工程，用到了Spring aop机制，除了spring的核心jar包以为，还需要用到的jar包有aspectj.jar，aspectjweaver.jar，aopalliance.jar查看项目中的pom，发现缺少依赖包，
+    由于本地仓库没有这些jar，查找可以提供下载jar包的maven中央库库，配置到maven中,自动更新：
+[html] view plain copy
+<repository>  
+     <id>nexus</id>  
+     <name>nexus</name>  
+     <url>http://repository.sonatype.org/content/groups/public/</url>  
+     <layout>default</layout>  
+ </repository>  
+
+    配置项目依赖的jar，主要是缺少这两个。
+[html] view plain copy
+   <dependency>  
+       <groupId>aspectj</groupId>  
+       <artifactId>aspectjrt</artifactId>  
+       <version>1.5.4</version>  
+</dependency>  
+<dependency>  
+       <groupId>aspectj</groupId>  
+       <artifactId>aspectjweaver</artifactId>  
+       <version>1.5.4</version>  
+lt;/dependency>  
