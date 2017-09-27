@@ -1,0 +1,120 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.henry</groupId>
+  <artifactId>tomcat-debug</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>war</packaging>
+
+
+  <dependencies>
+   
+    
+   <dependency>
+  <groupId>javax.servlet</groupId>
+  <artifactId>servlet-api</artifactId>
+  <version>2.5</version>
+  <scope>provided</scope> 
+   </dependency> 
+   
+    <dependency>  
+            <groupId>javax.servlet</groupId>  
+            <artifactId>jsp-api</artifactId>  
+            <version>2.0</version>  
+            <scope>provided</scope>  
+        </dependency>
+ 
+  </dependencies>
+  <build>
+  
+  
+
+    
+  <plugins>
+  <!-- 插件运行项目 -->
+ 	 <plugin>
+                <groupId>org.apache.tomcat.maven</groupId>
+                <artifactId>tomcat7-maven-plugin</artifactId>
+                <version>2.1</version>
+                <configuration>
+                    <port>8080</port>
+                    <path>/</path>
+                    <uriEncoding>UTF-8</uriEncoding>
+                  
+                    <server>tomcat7</server>
+                </configuration>
+            </plugin> 
+            
+            
+                 <!-- 远程部署 项目-->
+               <!--    <plugin>
+                    <groupId>org.apache.tomcat.maven</groupId>
+                    <artifactId>tomcat7-maven-plugin</artifactId>
+                    <version>2.2</version>
+                    <configuration>
+                        <url>http://192.168.119.100:7979/manager/text</url>
+                        <server>tomcat-id</server>
+                        <path>/test</path>
+                        <update>true</update>
+                        <username>username</username>
+                        <password>password</password>
+                    </configuration>
+                </plugin>-->
+                	<!-- war插件  -->
+			  <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-war-plugin</artifactId>
+            <version>2.4</version>
+            <configuration>
+                <webResources>
+                    <resource>
+                        <directory>src/main/webapp</directory>
+                    </resource>
+                </webResources>
+            </configuration>
+        </plugin>
+                <!-- 编译插件 -->
+                	<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<source>1.7</source>
+					<target>1.7</target>
+					<encoding>utf-8</encoding>
+				</configuration>
+			</plugin>
+			
+			
+		<!--
+		    依赖的jar包括  <scope>provided</scope>  
+			用maven来管理应用，经常会用到这个插件，他的功能很强大，暂说说他的一个功能吧。就是可以将依赖的jar文件拷贝到你指定的文件夹。
+			
+			这个文件放在你需要打包的工程下面，这个工程要么有应用代码，要么依赖其他工程。
+            <outputDirectory>${project.build.directory}/lib</outputDirectory>中
+            ${project.build.directory}是指当前工程的target目录。lib文件夹下会放置所有依赖的jar包。
+			  -->
+			<!--    <plugin>  
+			   <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>  
+                <version>2.1</version>  
+                <executions>  
+                    <execution>  
+                        <id>copy-dependencies</id>  
+                        <phase>prepare-package</phase>  
+                        <goals>  
+                            <goal>copy-dependencies</goal>  
+                        </goals>  
+                    </execution> 
+                </executions> 
+                <configuration>  
+                    <includeTypes>jar</includeTypes>  
+                    <overWriteSnapshots>true</overWriteSnapshots>  
+                    <type>jar</type>  
+                    <outputDirectory>${project.build.directory}/test-tomcat-plugin/WEB-INF/lib</outputDirectory>  
+                </configuration>  
+            </plugin> -->
+  </plugins>
+    <finalName>tomcat-debug</finalName>
+  </build>
+  
+  
+</project>
