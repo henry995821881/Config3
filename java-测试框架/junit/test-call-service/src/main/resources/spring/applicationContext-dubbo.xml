@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:dubbo="http://code.alibabatech.com/schema/dubbo"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans  
+        http://www.springframework.org/schema/beans/spring-beans.xsd  
+        http://code.alibabatech.com/schema/dubbo  
+        http://code.alibabatech.com/schema/dubbo/dubbo.xsd
+        ">
+
+	<dubbo:application name="test_client" />
+	<dubbo:protocol name="dubbo" port="-1" accepts="200" /><!-- 端口自动分配 -->
+
+	<dubbo:registry protocol="zookeeper" address="192.168.20.11:2181" id="ldpZookeeper" timeout="15000"/>
+	<!-- generator-insert-location -->
+	<!--服务注册-->
+	<!--<dubbo:service interface="com.gmkj.api.ldp.LdpTestService"
+		ref="ldpTestManager" group="ldp-soa" version="1.0"
+                     timeout="60000" protocol="dubbo" registry="ldpZookeeper" validation="false"  retries="2" />-->
+
+
+	<!--客户端调用服务接口声明-->
+					 
+	<dubbo:reference interface="com.xyscm.ldp.api.BaseDataService" id="baseDataService"
+					 group="Dev-henry-ldp-soa" version="1.0.0"
+					 timeout="300000" protocol="dubbo" registry="ldpZookeeper" validation="false" lazy="true" retries="2" check="false"/>
+
+	<dubbo:reference interface="com.xyscm.ldp.api.LdpDeliveryForAppService" id="ldpDeliveryForAppService"
+					 group="Dev-henry-ldp-soa" version="1.0.0"
+					 timeout="300000" protocol="dubbo" registry="ldpZookeeper" validation="false" lazy="true" retries="2" check="false"/>
+
+</beans>

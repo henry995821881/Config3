@@ -1,0 +1,199 @@
+Mockit是一个开源mock框架，官网：http://mockito.org/，源码：https://github.com/mockito/mockito
+要使用Mockit，首先需要在我们工程中引入对应的jar包，对于maven工程而言，需要添加如下依赖项即可：
+[html] view plain copy
+<dependency>  
+    <groupId>org.mockito</groupId>  
+    <artifactId>mockito-core</artifactId>  
+    <version>2.0.5-beta</version>  
+</dependency>  
+
+而在我们实际使用时，为了组织测试case的需要，我们可能还需要testng：
+[html] view plain copy
+<dependency>  
+    <groupId>org.testng</groupId>  
+    <artifactId>testng</artifactId>  
+    <version>6.8.8</version>  
+    <scope>test</scope>  
+</dependency>  
+
+在进行下面的mock test示例之前，我们先建两个简单的被测类Demo、ParameterClass。
+Demo.java:
+[html] view plain copy
+package com.anlegor.test;  
+  
+public class Demo {  
+  
+    private String name ="laowang";  
+    private int age;  
+  
+    public Demo(String name, int age) {  
+        this.name = name;  
+        this.age = age;  
+    }  
+  
+    public String speak(String str) {  
+        return str;  
+    }  
+    public String talk(String str)  
+    {  
+        return str;  
+    }  
+    public String methodNoParameters()  
+    {  
+        return name;  
+    }  
+  
+    public String methodCustomParameters(ParameterClass parameter,String str)  
+    {  
+        return str;  
+    }  
+  
+    public String methodHaveChildObj(ParameterClass parameter,String str)  
+    {  
+        parameter.childTalk(str);  
+        return str;  
+  
+    }  
+}  
+
+ParameterClass.java
+[html] view plain copy
+package com.anlegor.test;  
+  
+public class ParameterClass {  
+  
+    public ParameterClass() {  
+  
+    }  
+  
+    public String childTalk(String str)  
+    {  
+        return str;  
+    }  
+  
+}  
+
+我们在进行mock的时候，常见会有如下一些场景：
+1、 构造无参函数的返回
+[html] view plain copy
+/**  
+ * 测试无参数函数mock  
+ */  
+@Test(priority=0)  
+public void testReturnDirect()  
+{  
+    String mocked = "mocked Return";  
+    Demo demo  = Mockito.mock(Demo.class);  
+    Mockito.when(demo.methodNoParameters()).thenReturn(mocked);  
+    Assert.assertEquals(demo.methodNoParameters(), mocked);  
+}  
+
+2、构造有基本类型作为参数的返回
+[html] view plain copy
+/**  
+ * 测试任意基本类型参数函数mock  
+ */  
+@Test(priority=1)  
+public void testMethodWithParameter()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.anyString())).thenReturn(word);  
+    Assert.assertEquals(demo.speak("你好"), word);  
+}  
+
+3、构造有基本类型作为参数，但是只针对特定参数输入才mock返回值
+[html] view plain copy
+/**  
+ * 测试特定参数mock  
+ */  
+@Test(priority=2)  
+public void testMethodWithSpecificParameter()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.matches(".*大爷$"))).thenReturn(word);  
+    Assert.assertEquals(demo.speak("隔壁李大爷"), word);  
+}  
+
+4、构造自定义类作为函数参数的返回，这种情况稍微复杂一些，需要实现一个matcher类
+[html] view plain copy
+/**  
+ * 测试自定义类型参数的mock  
+ */  
+@Test(priority=3)  
+public void testMethodWithCustomParameter()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.methodCustomParameters(Mockito.argThat(new IsParameterClass()),  
+            Mockito.anyString())).thenReturn(word);  
+    Assert.assertEquals(demo.methodCustomParameters(new ParameterClass(), "你猜"), word);  
+}  
+//自定义一个与之匹配的matcher类  
+class IsParameterClass extends ArgumentMatcher<ParameterClass> {  
+    public boolean matches(Object para) {  
+        return para.getClass() == ParameterClass.class;  
+    }  
+ }  
+
+5、构造null返回
+[html] view plain copy
+/**  
+ * 测试mock的函数返回null  
+ */  
+@Test(priority=4)  
+public void testMethodWithReturnNull()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.anyString())).thenReturn(null);  
+    Assert.assertNotEquals(demo.speak("你猜"), word);  
+}  
+
+6、构造mock的函数抛出异常，当然我们可以在testng中设置expectedExceptions以显示声明会抛出指定类型的异常，这样该条case执行的时候就会成功
+[html] view plain copy
+/**  
+ * 测试mock的函数抛出异常  
+ */  
+@Test(expectedExceptions=org.mockito.exceptions.base.MockitoException.class,priority=5)  
+public void testMethodReturnException()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.anyString())).thenThrow(new Exception());  
+    demo.speak("你猜");  
+}  
+
+7、某些反复调用，我们希望对于每次调用都返回不同的mock值
+[html] view plain copy
+/**  
+ * 测试mock的不同次调用返回不同的值  
+ */  
+@Test(priority=6)  
+public void testMethodMultiDiffReturn()  
+{  
+    String word= "mocked Return 0";  
+    String word1= "mocked Return 1";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.anyString())).thenReturn(word).thenReturn(word1);  
+    Assert.assertEquals(demo.speak("你猜"), word);  
+    Assert.assertEquals(demo.speak("你猜"), word1);  
+}  
+
+8、验证函数执行是否经过了mock
+[html] view plain copy
+/**  
+ * 验证方法是否被mock且是否为所执行的参数调用  
+ */  
+@Test(expectedExceptions= org.mockito.exceptions.misusing.NotAMockException.class,priority=7)  
+public void testMockedMethodRun()  
+{  
+    String word= "mocked Return";  
+    Demo demo =  Mockito.mock(Demo.class);  
+    Mockito.when(demo.speak(Mockito.anyString())).thenReturn(word);  
+    Assert.assertEquals(demo.speak("你猜"), word);  
+    Mockito.verify(demo.speak("你猜"));  
+    //下面这个参数的方法调用并没有被执行过，所以会抛出NotAMockException的异常  
+    Mockito.verify(demo.speak("nicai"));  
+}  
