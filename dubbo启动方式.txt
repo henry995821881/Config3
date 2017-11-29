@@ -1,0 +1,157 @@
+Dubbo服务的启动方式：
+
+一. 用tomcat容器启动
+
+即把工程做成web工程，在web.xml里面启动spring,代码如下:
+
+contextConfigLocation
+
+classpath:configs/applicationContext.xml
+
+org.springframework.web.context.ContextLoaderListener
+
+然后在spring中启动dubbo服务,
+
+======================
+
+=====================
+
+dubbo配置代码如下:
+
+===========================
+
+==========================
+
+然后dubbo服务就可以随着tomcat启动而启动了。这种方式并不推荐使用，因为它增加了复杂性，浪费了内存资源。
+
+二. 自建main方法来运行，这种方式适合本地调试
+
+代码如下：
+
+public class DubboProvider {
+
+private static final Log log = LogFactory.getLog(DubboProvider.class);
+
+public static void main(String[] args) {
+
+try {
+
+ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("classpath:configs/applicationContext.xml");
+
+context.start();
+
+} catch (Exception e) {
+
+log.error("== DubboProvider context start error:",e);
+
+}
+
+synchronized (DubboProvider.class) {
+
+while (true) {
+
+try {
+
+DubboProvider.class.wait();
+
+} catch (InterruptedException e) {
+
+log.error("== synchronized error:",e);
+
+}
+
+}
+
+}
+
+}
+
+}
+
+=============================================
+
+三. 使用dubbo框架提供的main方法来运行(推荐使用)
+
+其优点: 1. 框架本身提供，非常完善。 2. 可以实现优雅关机。pom.xml文件的配置代码如下:
+
+smmvc-user-service
+
+${project.build.directory}/classes
+
+src/main/resources
+
+true
+
+**/*.xml
+
+**/*.properties
+
+${project.build.directory}/classes/META-INF/spring
+
+src/main/resources/configs
+
+true
+
+applicationContext.xml
+
+org.eclipse.m2e
+
+lifecycle-mapping
+
+1.0.0
+
+org.apache.maven.plugins
+
+maven-dependency-plugin
+
+[2.0,)
+
+copy-dependencies
+
+org.apache.maven.plugins
+
+maven-jar-plugin
+
+target/classes/
+
+com.alibaba.dubbo.container.Main
+
+false
+
+true
+
+lib/
+
+.
+
+org.apache.maven.plugins
+
+maven-dependency-plugin
+
+copy-dependencies
+
+package
+
+copy-dependencies
+
+jar
+
+jar
+
+false
+
+${project.build.directory}/lib
+
+========================================================
+
+然后，单击右键===>run as ===>Maven install
+
+到工程的target目录，把lib目录和smmvc-user-service.jar文件拷贝出来，随便放到一个目录下，就可以在dos界面下运行了
+
+java -jarsmmvc-user-service.jar &
+
+如果遇到如下错误:
+
+"com.sun.org.apache.xerces.internal.impl.io.MalformedByteSequenceException: 3 字节的 UTF-8 序列的字节 3 无效"
+
+解决方案：把所有的配置文件的utf-8声明改成utf8即可
